@@ -1,0 +1,33 @@
+# Dependencies and caches
+node_modules/
+.codex_tmp/node_modules/
+.cache/
+.tmp/
+tmp/
+temp/
+
+# Generated verification/render artifacts
+.codex_tmp/render_check/
+.codex_tmp/*.json
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Office temporary/lock files
+~$*.docx
+~$*.xlsx
+~$*.xlsm
+~$*.xls
+*.tmp
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
