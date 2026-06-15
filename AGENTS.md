@@ -12,7 +12,12 @@
 
 - `outputs/worktime_new_template/工时测量与负荷山积自动扩展模板_v16.xlsx`
 
-项目不是传统代码项目，主要资产是 Excel 文件和少量生成/验证用的临时脚本。
+项目当前包含两部分：
+
+- Excel 工时测量、标准工时计算、工序负荷山积图模板。
+- Vite + React + Netlify Functions 在线工时测量工具，用于现场录入、保存测量单并导出 Excel。
+
+主要资产是 Excel 文件、在线工具代码和少量生成/验证脚本。
 
 ## 当前目录结构
 
@@ -58,6 +63,55 @@
   - Codex 生成和验证 Excel 时使用的临时脚本与检查文件。
   - 其中 `create_new_template_xlsm.ps1` 是生成当前模板的主要脚本。
   - 该目录不是用户最终使用入口，但对后续复现模板生成过程有参考价值。
+
+- `src/`
+  - 在线工时测量工具前端源码。
+  - 当前使用 Vite、React、TypeScript。
+  - `src/data/presets.ts` 维护线体、机型、班组和默认工序预设。
+  - 当前启用 `A线`，支持 `普通单洗`、`DD单洗`、`普通洗烘一体机`、`DD洗烘一体机`。
+
+- `netlify/functions/`
+  - 在线工具后端接口。
+  - `access.ts` 校验访问码。
+  - `sessions.ts` 创建、读取、保存测量单。
+  - `export.ts` 按测量单导出 Excel。
+  - `_shared/session.ts` 使用 Netlify Blobs 保存测量单。
+  - `_shared/excel.ts` 基于 `outputs/worktime_new_template/工时测量与负荷山积自动扩展模板_v16.xlsx` 生成导出工作簿。
+
+- `scripts/verify-export.ts`
+  - 导出逻辑验证脚本。
+  - 会生成 `.codex_tmp/verify_export.xlsx`，该文件属于验证产物，不应提交。
+
+- `netlify.toml`
+  - Netlify 构建配置。
+  - 构建命令为 `npm run build`，发布目录为 `dist`。
+  - Functions included files 包含 v16 Excel 模板。
+
+- `package.json`
+  - 在线工具项目配置。
+  - 常用命令：
+    - `npm run dev`
+    - `npm run build`
+    - `npm run verify:export`
+
+## 在线工具说明
+
+在线工具当前能力：
+
+- 通过 `SITE_ACCESS_CODE` 环境变量配置访问码。
+- 前端请求使用 `X-Access-Code` 请求头传递访问码。
+- 支持新建测量单、读取测量单、自动保存测量单。
+- 测量单保存到 Netlify Blobs 的 `worktime-sessions` store。
+- 生产环境使用 site-scoped store，非生产部署使用 deploy-scoped store。
+- 支持复制带 `session` 参数的测量单链接。
+- 支持导出当前班组或整机 Excel。
+- 导出文件会带现场测量记录，并按实际工序数扩展 `tblProcess` 和山积图范围。
+
+本地或部署前验证建议：
+
+1. 修改前端或 Functions 后运行 `npm run build`。
+2. 修改导出逻辑、模板引用或预设工序后运行 `npm run verify:export`。
+3. `.codex_tmp/verify_export.xlsx`、`.codex_tmp/api_*.xlsx`、`.codex_tmp/online_*.xlsx`、`.codex_tmp/*validation*.xlsx` 都是验证产物，不应提交。
 
 ## 原始参考表的关键逻辑
 
@@ -241,6 +295,11 @@
    - `负荷ST` 是否仍为柱状图。
    - `线平衡率` 是否随工序数据变化。
 4. 如需再次生成模板，可以参考 `.codex_tmp/create_new_template_xlsm.ps1`，但应先确认脚本输出路径，避免覆盖用户正在使用的文件。
+5. 修改在线工具后，需要重点验证：
+   - `npm run build` 是否通过。
+   - `npm run verify:export` 是否通过。
+   - Netlify 环境变量 `SITE_ACCESS_CODE` 是否已配置。
+   - `netlify.toml` 中 included file 是否仍指向当前最新模板。
 
 ## 本地操作规则
 

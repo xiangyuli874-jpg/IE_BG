@@ -1,0 +1,13 @@
+[build]
+command = "npm run build"
+publish = "dist"
+
+[functions]
+included_files = [
+  "outputs/worktime_new_template/工时测量与负荷山积自动扩展模板_v16.xlsx"
+]
+
+[[redirects]]
+from = "/*"
+to = "/index.html"
+status = 200

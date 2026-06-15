@@ -7,9 +7,13 @@ tmp/
 temp/
 
 # Generated verification/render artifacts
+dist/
 .codex_tmp/render_check/
 .codex_tmp/*.json
 .codex_tmp/*validation*.xlsx
+.codex_tmp/verify_*.xlsx
+.codex_tmp/api_*.xlsx
+.codex_tmp/online_*.xlsx
 
 # Logs
 *.log
@@ -31,3 +35,6 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
+
+# Local Netlify folder
+.netlify
