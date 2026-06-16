@@ -1,6 +1,8 @@
 # Dependencies and caches
 node_modules/
 .codex_tmp/node_modules/
+.codex_tmp/
+**/.codex_tmp/
 .cache/
 .tmp/
 tmp/

@@ -1,14 +1,14 @@
 # 工时测量与负荷山积模板
 
-本仓库用于整理和维护 Excel 工时测量、标准工时计算、工序负荷山积图分析模板，并提供一个用于现场录入和导出模板的在线工时测量工具。
+本仓库用于整理和维护 Excel 工时测量、标准工时计算、工序负荷山积图分析模板，并提供一个移动端优先的在线工时测量工具。
 
-项目主要资产包括 Excel 模板文件、在线录入前端、Netlify Functions 导出接口，以及少量用于生成和验证模板的脚本。
+项目主要资产包括 Excel 模板文件、`移动网页/` 在线录入应用、Netlify Functions 导出接口，以及少量用于生成和验证模板的脚本。
 
 ## 推荐使用
 
 ### 在线工时测量工具
 
-项目根目录包含一个 Vite + React + Netlify Functions 应用，用于在线录入现场测时数据并导出 Excel。
+`移动网页/` 目录包含一个 Vite + React + Netlify Functions 应用，用于在线录入现场测时数据并导出 Excel。
 
 主要功能：
 
@@ -19,11 +19,13 @@
 - 支持工序新增、删除和拖动排序。
 - 自动保存测量单，并可复制测量单链接继续填写。
 - 支持导出当前班组或整机 Excel。
-- 导出文件基于 `outputs/worktime_new_template/工时测量与负荷山积自动扩展模板_v16.xlsx` 生成。
+- 移动端界面已针对窄屏工具栏、参数区和工序横向录入表优化。
+- 导出文件基于 `移动网页/outputs/worktime_new_template/工时测量与负荷山积自动扩展模板_v16.xlsx` 生成。
 
 本地运行：
 
 ```powershell
+Set-Location 移动网页
 npm install
 npm run dev
 ```
@@ -31,6 +33,7 @@ npm run dev
 构建与导出校验：
 
 ```powershell
+Set-Location 移动网页
 npm run build
 npm run verify:export
 ```
@@ -40,6 +43,8 @@ Netlify 部署需要配置环境变量：
 ```text
 SITE_ACCESS_CODE=你的访问码
 ```
+
+如果从仓库根目录连接 Netlify，站点 Base directory 请选择 `移动网页`。
 
 ### 工序负荷山积模板
 
@@ -77,13 +82,17 @@ SITE_ACCESS_CODE=你的访问码
 
 ## 目录说明
 
-- `src/`
+- `移动网页/`
+  - 在线工时测量工具独立子项目。
+  - 包含前端源码、Netlify Functions、部署配置、导出校验脚本和在线导出所需的 v16 模板副本。
+
+- `移动网页/src/`
   - 在线工时测量工具前端代码。
 
-- `netlify/functions/`
+- `移动网页/netlify/functions/`
   - 访问校验、测量单保存和 Excel 导出的 Netlify Functions。
 
-- `scripts/`
+- `移动网页/scripts/`
   - 导出结果校验脚本。
 
 - `outputs/worktime_new_template/`
@@ -109,5 +118,5 @@ SITE_ACCESS_CODE=你的访问码
 
 - 不直接覆盖历史模板，优先另存新版本。
 - 修改模板后重点检查公式、图表引用范围、TT 折线、负荷 ST 柱形图和线平衡率。
-- 修改在线工具后运行 `npm run build`，涉及导出逻辑时同时运行 `npm run verify:export`。
+- 修改在线工具后在 `移动网页/` 下运行 `npm run build`，涉及导出逻辑时同时运行 `npm run verify:export`。
 - 不批量删除文件或目录；如需删除文件，只删除单个明确路径的文件。

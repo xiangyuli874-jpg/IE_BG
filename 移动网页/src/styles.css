@@ -263,18 +263,30 @@ button:focus-visible {
 }
 
 .session-toolbar {
-  align-items: center;
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(3, minmax(110px, 150px)) 1fr;
+  grid-template-columns: 1fr;
   margin-bottom: 12px;
+}
+
+.session-summary {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 440px);
+}
+
+.metric-stack {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(90px, 118px));
 }
 
 .metric {
   background: #fff;
   border: 1px solid #dce2e8;
   border-radius: 8px;
-  padding: 10px 12px;
+  min-height: 58px;
+  padding: 8px 10px;
 }
 
 .metric strong {
@@ -294,14 +306,17 @@ button:focus-visible {
 }
 
 .toolbar-buttons {
-  justify-content: flex-end;
+  justify-content: stretch;
+}
+
+.toolbar-buttons button {
+  flex: 1 1 0;
 }
 
 .parameter-panel {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(2, minmax(150px, 220px));
-  margin-bottom: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .number-field {
@@ -376,8 +391,8 @@ button:focus-visible {
   border: 1px solid #dce2e8;
   display: grid;
   gap: 5px;
-  grid-template-columns: 32px 36px 132px repeat(5, 70px) 54px 112px 34px;
-  min-width: 762px;
+  grid-template-columns: 32px 36px 132px repeat(5, 70px) 128px 34px;
+  min-width: 724px;
   padding: 6px;
 }
 
@@ -481,6 +496,18 @@ button:focus-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .session-summary {
+    grid-template-columns: 104px minmax(0, 1fr);
+  }
+
+  .metric-stack {
+    grid-template-columns: 1fr;
+  }
+
+  .metric {
+    min-height: 55px;
+  }
+
   .process-panel {
     border-left: 0;
     border-radius: 0;
@@ -498,8 +525,8 @@ button:focus-visible {
   }
 
   .process-row {
-    grid-template-columns: 32px 34px 122px repeat(5, 64px) 50px 104px 34px;
-    min-width: 718px;
+    grid-template-columns: 32px 34px 122px repeat(5, 64px) 118px 34px;
+    min-width: 664px;
     padding: 5px;
   }
 }
@@ -521,8 +548,26 @@ button:focus-visible {
     gap: 8px;
   }
 
+  .session-summary {
+    gap: 8px;
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+
   .metric {
-    padding: 8px 10px;
+    min-height: 52px;
+    padding: 7px 9px;
+  }
+
+  .metric strong {
+    font-size: 17px;
+  }
+
+  .number-field {
+    padding: 8px;
+  }
+
+  .number-field input {
+    min-height: 36px;
   }
 
   .toolbar-buttons {
@@ -545,8 +590,8 @@ button:focus-visible {
   }
 
   .process-row {
-    grid-template-columns: 30px 34px 112px repeat(5, 58px) 48px 94px 32px;
-    min-width: 644px;
+    grid-template-columns: 30px 34px 112px repeat(5, 58px) 106px 32px;
+    min-width: 604px;
   }
 
   .drag-handle {

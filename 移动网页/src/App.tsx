@@ -456,17 +456,25 @@ export default function App() {
       ) : (
         <>
           <section className="session-toolbar">
-            <div className="metric">
-              <span>班组</span>
-              <strong>{session.groups.length}</strong>
-            </div>
-            <div className="metric">
-              <span>工序</span>
-              <strong>{totalProcesses}</strong>
-            </div>
-            <div className="metric">
-              <span>保存</span>
-              <strong className={`save-state ${saveState}`}>{saveLabel(saveState)}</strong>
+            <div className="session-summary">
+              <div className="metric-stack">
+                <div className="metric">
+                  <span>班组</span>
+                  <strong>{session.groups.length}</strong>
+                </div>
+                <div className="metric">
+                  <span>工序</span>
+                  <strong>{totalProcesses}</strong>
+                </div>
+                <div className="metric">
+                  <span>保存</span>
+                  <strong className={`save-state ${saveState}`}>{saveLabel(saveState)}</strong>
+                </div>
+              </div>
+              <div className="parameter-panel">
+                <NumberField label="计划单班产量" value={session.parameters.plannedOutput} onChange={(value) => updateParameter("plannedOutput", value)} />
+                <NumberField label="班次工时(h)" value={session.parameters.shiftHours} onChange={(value) => updateParameter("shiftHours", value ?? 11)} />
+              </div>
             </div>
             <div className="toolbar-buttons">
               <button className="secondary" type="button" onClick={createNewSession} disabled={creating}>
@@ -482,11 +490,6 @@ export default function App() {
                 导出整机
               </button>
             </div>
-          </section>
-
-          <section className="parameter-panel">
-            <NumberField label="计划单班产量" value={session.parameters.plannedOutput} onChange={(value) => updateParameter("plannedOutput", value)} />
-            <NumberField label="班次工时(h)" value={session.parameters.shiftHours} onChange={(value) => updateParameter("shiftHours", value ?? 11)} />
           </section>
 
           <nav className="group-tabs" aria-label="班组切换">
@@ -727,17 +730,6 @@ function ProcessEditor(props: {
                 />
               </label>
             ))}
-            <label className="process-cell people-cell">
-              <span>人员</span>
-              <input
-                aria-label="人员"
-                type="number"
-                min="0"
-                step="0.5"
-                value={formatInput(process.people)}
-                onChange={(event) => props.onUpdate(props.group.id, process.id, (item) => ({ ...item, people: numberOrNull(event.target.value) }))}
-              />
-            </label>
             <label className="process-cell remark-cell">
               <span>备注</span>
               <input
