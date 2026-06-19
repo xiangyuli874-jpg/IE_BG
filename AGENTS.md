@@ -15,7 +15,7 @@
 项目当前包含两部分：
 
 - Excel 工时测量、标准工时计算、工序负荷山积图模板。
-- `移动网页/` 下的 Vite + React + Netlify Functions 在线工时测量工具，用于现场录入、保存测量单并导出 Excel。
+- `移动网页/` 下的 Vite + React 在线工时测量工具，可部署到 Netlify 或 Vercel，用于现场录入、保存测量单并导出 Excel。
 
 主要资产是 Excel 文件、移动网页子项目代码和少量生成/验证脚本。
 
@@ -75,7 +75,9 @@
   - 当前使用 Vite、React、TypeScript。
   - `移动网页/src/data/presets.ts` 维护线体、机型、班组和默认工序预设。
   - 当前启用 `A线`，支持 `普通单洗`、`DD单洗`、`普通洗烘一体机`、`DD洗烘一体机`。
-  - 当前界面已针对移动端窄屏录入做过优化，包括工具栏、参数区域和工序横向录入行。
+  - 当前界面已针对移动端窄屏录入做过优化，包括状态栏、操作菜单、工序横向录入行和底部导出栏。
+  - `mobileKeyboard.ts` 监听移动键盘和 Visual Viewport 状态，避免固定导出栏遮挡录入区域。
+  - `deploymentMode.ts` 通过 `VITE_REQUIRE_ACCESS_CODE` 控制前端是否显示访问码入口。
 
 - `移动网页/netlify/functions/`
   - 在线工具后端接口。
@@ -83,7 +85,20 @@
   - `sessions.ts` 创建、读取、保存测量单。
   - `export.ts` 按测量单导出 Excel。
   - `_shared/session.ts` 使用 Netlify Blobs 保存测量单。
-  - `_shared/excel.ts` 基于 `移动网页/outputs/worktime_new_template/工时测量与负荷山积自动扩展模板_v16.xlsx` 生成导出工作簿。
+  - 导出接口复用 `移动网页/shared/excel.ts` 生成工作簿。
+
+- `移动网页/api/`
+  - Vercel Functions 接口。
+  - `api/sessions/index.ts` 创建测量单。
+  - `api/sessions/[id].ts` 读取和保存测量单。
+  - `api/export.ts` 导出当前班组或整机 Excel。
+  - `api/_lib/sessionRepository.ts` 使用 Upstash Redis 保存测量单，并支持从旧 Netlify 站点按需迁移。
+  - `api/_lib/rateLimit.ts` 对创建、读取、保存和导出接口实施独立的滑动窗口限流。
+
+- `移动网页/shared/`
+  - Netlify 与 Vercel 共用逻辑。
+  - `sessionCore.ts` 负责测量单创建、校验和规范化。
+  - `excel.ts` 负责生成 Excel 导出文件。
 
 - `移动网页/scripts/verify-export.ts`
   - 导出逻辑验证脚本。
@@ -95,10 +110,17 @@
   - Functions included files 包含 v16 Excel 模板。
   - 如果从仓库根目录连接 Netlify，站点 Base directory 应设置为 `移动网页`。
 
+- `移动网页/vercel.json`
+  - Vercel 独立部署配置。
+  - Vite 构建输出目录为 `dist`。
+  - `/api/*` 保留为 Vercel Functions，其余路径回退到 `index.html`。
+  - `api/export.ts` 会包含 v16 Excel 模板，并将最大执行时间设为 60 秒。
+
 - `移动网页/package.json`
   - 在线工具项目配置。
   - 常用命令：
     - `npm run dev`
+    - `npm test`
     - `npm run build`
     - `npm run verify:export`
 
@@ -114,12 +136,22 @@
 - 支持复制带 `session` 参数的测量单链接。
 - 支持导出当前班组或整机 Excel。
 - 导出文件会带现场测量记录，并按实际工序数扩展 `tblProcess` 和山积图范围。
+- Netlify 版使用 Netlify Blobs 保存测量单，并通过 `SITE_ACCESS_CODE` 保护接口。
+- Vercel 版使用 Upstash Redis 保存测量单，并通过 `VITE_REQUIRE_ACCESS_CODE=false` 关闭前端访问码入口。
+- Vercel Redis 环境变量优先使用 `UPSTASH_REDIS_REST_URL`、`UPSTASH_REDIS_REST_TOKEN`，也兼容 `KV_REST_API_URL`、`KV_REST_API_TOKEN`。
+- 可选的 `NETLIFY_MIGRATION_BASE_URL` 和 `NETLIFY_MIGRATION_ACCESS_CODE` 用于在首次读取时迁移旧 Netlify 测量单。
+- Vercel 接口限流策略：
+  - 创建：每 IP 每小时 30 次。
+  - 读取：每 IP 每 10 分钟 300 次。
+  - 保存：每 IP 每 10 分钟 600 次。
+  - 导出：每 IP 每小时 60 次。
 
 本地或部署前验证建议：
 
-1. 修改前端或 Functions 后在 `移动网页/` 下运行 `npm run build`。
-2. 修改导出逻辑、模板引用或预设工序后在 `移动网页/` 下运行 `npm run verify:export`。
-3. `.codex_tmp/` 和 `移动网页/.codex_tmp/` 下的验证工作簿、日志和缓存都是验证产物，不应提交。
+1. 修改前端、共享逻辑或 Functions 后在 `移动网页/` 下运行 `npm test`。
+2. 运行 `npm run build` 验证 TypeScript 和生产构建。
+3. 修改导出逻辑、模板引用或预设工序后运行 `npm run verify:export`。
+4. `.codex_tmp/` 和 `移动网页/.codex_tmp/` 下的验证工作簿、日志和缓存都是验证产物，不应提交。
 
 ## 原始参考表的关键逻辑
 
@@ -304,10 +336,13 @@
    - `线平衡率` 是否随工序数据变化。
 4. 如需再次生成模板，可以参考 `.codex_tmp/create_new_template_xlsm.ps1`，但应先确认脚本输出路径，避免覆盖用户正在使用的文件。
 5. 修改在线工具后，需要重点验证：
+   - 在 `移动网页/` 下运行 `npm test` 是否通过。
    - 在 `移动网页/` 下运行 `npm run build` 是否通过。
    - 在 `移动网页/` 下运行 `npm run verify:export` 是否通过。
    - Netlify 环境变量 `SITE_ACCESS_CODE` 是否已配置。
    - `移动网页/netlify.toml` 中 included file 是否仍指向当前最新模板。
+   - Vercel 的 Upstash Redis 环境变量和 `VITE_REQUIRE_ACCESS_CODE` 是否已正确配置。
+   - `移动网页/vercel.json` 中导出函数是否仍包含当前最新模板。
 
 ## 本地操作规则
 

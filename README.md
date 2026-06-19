@@ -2,13 +2,13 @@
 
 本仓库用于整理和维护 Excel 工时测量、标准工时计算、工序负荷山积图分析模板，并提供一个移动端优先的在线工时测量工具。
 
-项目主要资产包括 Excel 模板文件、`移动网页/` 在线录入应用、Netlify Functions 导出接口，以及少量用于生成和验证模板的脚本。
+项目主要资产包括 Excel 模板文件、`移动网页/` 在线录入应用、Netlify/Vercel 服务端接口，以及少量用于生成和验证模板的脚本。
 
 ## 推荐使用
 
 ### 在线工时测量工具
 
-`移动网页/` 目录包含一个 Vite + React + Netlify Functions 应用，用于在线录入现场测时数据并导出 Excel。
+`移动网页/` 目录包含一个 Vite + React 应用，可独立部署到 Netlify 或 Vercel，用于在线录入现场测时数据并导出 Excel。
 
 主要功能：
 
@@ -19,7 +19,8 @@
 - 支持工序新增、删除和拖动排序。
 - 自动保存测量单，并可复制测量单链接继续填写。
 - 支持导出当前班组或整机 Excel。
-- 移动端界面已针对窄屏工具栏、参数区和工序横向录入表优化。
+- 移动端界面已针对窄屏状态栏、操作菜单、工序横向录入和底部导出栏优化。
+- 能识别移动键盘状态，避免底部导出栏遮挡录入区域。
 - 导出文件基于 `移动网页/outputs/worktime_new_template/工时测量与负荷山积自动扩展模板_v16.xlsx` 生成。
 
 本地运行：
@@ -30,21 +31,43 @@ npm install
 npm run dev
 ```
 
-构建与导出校验：
+测试、构建与导出校验：
 
 ```powershell
 Set-Location 移动网页
+npm test
 npm run build
 npm run verify:export
 ```
 
-Netlify 部署需要配置环境变量：
+### Vercel 部署
+
+从仓库连接 Vercel 时，Root Directory 选择 `移动网页`。
+
+必需环境变量：
+
+```text
+UPSTASH_REDIS_REST_URL=Upstash Redis REST URL
+UPSTASH_REDIS_REST_TOKEN=Upstash Redis REST Token
+VITE_REQUIRE_ACCESS_CODE=false
+```
+
+也兼容 Vercel KV 风格的 `KV_REST_API_URL` 和 `KV_REST_API_TOKEN`。
+
+Vercel 版将测量单保存到 Upstash Redis，并对创建、读取、保存和导出接口分别实施滑动窗口限流。若需要从旧 Netlify 站点按需迁移测量单，可额外配置：
+
+```text
+NETLIFY_MIGRATION_BASE_URL=https://旧站点域名
+NETLIFY_MIGRATION_ACCESS_CODE=旧站点访问码
+```
+
+### Netlify 部署
+
+从仓库连接 Netlify 时，站点 Base directory 选择 `移动网页`，并配置：
 
 ```text
 SITE_ACCESS_CODE=你的访问码
 ```
-
-如果从仓库根目录连接 Netlify，站点 Base directory 请选择 `移动网页`。
 
 ### 工序负荷山积模板
 
@@ -84,13 +107,19 @@ SITE_ACCESS_CODE=你的访问码
 
 - `移动网页/`
   - 在线工时测量工具独立子项目。
-  - 包含前端源码、Netlify Functions、部署配置、导出校验脚本和在线导出所需的 v16 模板副本。
+  - 包含前端源码、Netlify/Vercel 接口、部署配置、测试、导出校验脚本和在线导出所需的 v16 模板副本。
 
 - `移动网页/src/`
   - 在线工时测量工具前端代码。
 
 - `移动网页/netlify/functions/`
   - 访问校验、测量单保存和 Excel 导出的 Netlify Functions。
+
+- `移动网页/api/`
+  - Vercel Functions，包括 Redis 会话存储、接口限流和 Excel 导出。
+
+- `移动网页/shared/`
+  - Netlify 与 Vercel 共用的会话规范化和 Excel 导出逻辑。
 
 - `移动网页/scripts/`
   - 导出结果校验脚本。
@@ -118,5 +147,5 @@ SITE_ACCESS_CODE=你的访问码
 
 - 不直接覆盖历史模板，优先另存新版本。
 - 修改模板后重点检查公式、图表引用范围、TT 折线、负荷 ST 柱形图和线平衡率。
-- 修改在线工具后在 `移动网页/` 下运行 `npm run build`，涉及导出逻辑时同时运行 `npm run verify:export`。
+- 修改在线工具后在 `移动网页/` 下运行 `npm test` 和 `npm run build`，涉及导出逻辑时同时运行 `npm run verify:export`。
 - 不批量删除文件或目录；如需删除文件，只删除单个明确路径的文件。
