@@ -1,8 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import JSZip from "jszip";
-import { buildWorkbookBuffer } from "../netlify/functions/_shared/excel";
-import { createSession } from "../netlify/functions/_shared/session";
+import { buildWorkbookBuffer } from "../shared/excel";
+import { createSession } from "../shared/sessionCore";
 
 const modelName = "XQG100-测试";
 const session = createSession("a-line", "ordinary-washer-dryer", modelName);

@@ -3,8 +3,8 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import JSZip from "jszip";
-import { findLine } from "../../../src/data/presets";
-import type { ExportScope, WorktimeGroup, WorktimeProcess, WorktimeSession } from "../../../src/types";
+import { findLine } from "../src/data/presets.js";
+import type { ExportScope, WorktimeGroup, WorktimeProcess, WorktimeSession } from "../src/types.js";
 
 const TEMPLATE_FILE = "工时测量与负荷山积自动扩展模板_v16.xlsx";
 const TEMPLATE_PARTS = ["outputs", "worktime_new_template", TEMPLATE_FILE];
@@ -49,7 +49,7 @@ function templateCandidates() {
   const here = path.dirname(fileURLToPath(import.meta.url));
   return [
     path.resolve(process.cwd(), ...TEMPLATE_PARTS),
-    path.resolve(here, "../../../", ...TEMPLATE_PARTS),
+    path.resolve(here, "../", ...TEMPLATE_PARTS),
     path.resolve(here, ...TEMPLATE_PARTS)
   ];
 }

@@ -16,5 +16,5 @@
     "noEmit": true,
     "jsx": "react-jsx"
   },
-  "include": ["src", "netlify/functions", "scripts"]
+  "include": ["src", "shared", "api", "netlify/functions", "scripts"]
 }

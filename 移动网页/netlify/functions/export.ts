@@ -1,6 +1,6 @@
 import type { Config } from "@netlify/functions";
 import { verifyAccessCode } from "./_shared/auth";
-import { buildWorkbookBuffer } from "./_shared/excel";
+import { buildWorkbookBuffer } from "../../shared/excel";
 import { errorResponse } from "./_shared/http";
 import { loadSession } from "./_shared/session";
 import type { ExportRequest } from "../../src/types";

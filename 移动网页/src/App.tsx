@@ -5,6 +5,7 @@ import {
   GripVertical,
   LogOut,
   Loader2,
+  MoreVertical,
   Plus,
   RefreshCw,
   ShieldCheck,
@@ -13,6 +14,8 @@ import {
 import type { FormEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_PARAMETERS, LINE_CONFIGS, findLine } from "./data/presets";
+import { requiresAccessCode } from "./deploymentMode";
+import { useMobileKeyboardVisible } from "./mobileKeyboard";
 import type { SampleValue, WorktimeGroup, WorktimeProcess, WorktimeSession } from "./types";
 
 const RECENT_KEY = "gongshibiao.recentSessions";
@@ -21,6 +24,7 @@ const ACCESS_CODE_HEADER = "X-Access-Code";
 const SAVE_DELAY = 650;
 const DEFAULT_TEMPLATE_MODEL_ID = "ordinary-washer-dryer";
 const FALLBACK_MODEL_NAME = "洗烘结构";
+const REQUIRE_ACCESS_CODE = requiresAccessCode(import.meta.env.VITE_REQUIRE_ACCESS_CODE);
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -105,7 +109,9 @@ function useSessionFromUrl() {
 
 export default function App() {
   const [session, setSession] = useState<WorktimeSession | null>(null);
-  const [accessCode, setAccessCode] = useState(() => localStorage.getItem(ACCESS_CODE_KEY) || "");
+  const [accessCode, setAccessCode] = useState(() =>
+    REQUIRE_ACCESS_CODE ? localStorage.getItem(ACCESS_CODE_KEY) || "" : "public"
+  );
   const [accessInput, setAccessInput] = useState("");
   const [checkingAccess, setCheckingAccess] = useState(false);
   const [lineId, setLineId] = useState("a-line");
@@ -119,6 +125,7 @@ export default function App() {
   const [dragProcessId, setDragProcessId] = useState<string | null>(null);
   const saveTimer = useRef<number | null>(null);
   const hydrated = useRef(false);
+  const mobileKeyboardVisible = useMobileKeyboardVisible();
 
   const enabledLines = LINE_CONFIGS.filter((line) => line.enabled);
 
@@ -395,6 +402,12 @@ export default function App() {
     setMessage("测量单链接已复制");
   };
 
+  const openNewSessionStart = () => {
+    setSession(null);
+    setMessage("");
+    updateUrl(null, "push");
+  };
+
   const totalProcesses = session?.groups.reduce((sum, group) => sum + group.processes.length, 0) ?? 0;
   const deleteRecent = (id: string) => {
     setRecent(forgetRecentSession(id));
@@ -406,17 +419,21 @@ export default function App() {
         <div className="brand">
           <ClipboardList size={28} aria-hidden="true" />
           <div>
-            <h1>在线工时测量</h1>
-            <p>{session ? sessionLabel(session) : "A线现场测时录入与山积图 Excel 导出"}</p>
+            <h1>{session ? displayModelName(session) : "在线工时测量"}</h1>
+            <p>
+              {session
+                ? `${findLine(session.lineId)?.name ?? session.lineId} · ${currentGroup?.name ?? "测量单"}`
+                : "A线现场测时录入与山积图 Excel 导出"}
+            </p>
           </div>
         </div>
-        <div className="top-actions">
+        <div className={`top-actions ${session ? "session-desktop-actions" : ""}`}>
           {session && (
             <button className="icon-button" type="button" title="复制测量单链接" onClick={copyLink}>
               <Copy size={18} />
             </button>
           )}
-          {accessCode && (
+          {REQUIRE_ACCESS_CODE && accessCode && (
             <button className="icon-button" type="button" title="退出访问码" onClick={logoutAccess}>
               <LogOut size={18} />
             </button>
@@ -425,11 +442,38 @@ export default function App() {
             <RefreshCw size={18} />
           </button>
         </div>
+        {session && (
+          <details className="mobile-session-menu">
+            <summary className="icon-button" aria-label="打开测量单菜单">
+              <MoreVertical size={20} />
+            </summary>
+            <div className="mobile-session-menu-panel">
+              <button type="button" onClick={(event) => {
+                closeMobileMenu(event.currentTarget);
+                openNewSessionStart();
+              }}><Plus size={17} />新建测量单</button>
+              <button type="button" onClick={(event) => {
+                closeMobileMenu(event.currentTarget);
+                void copyLink();
+              }}><Copy size={17} />复制链接</button>
+              <button type="button" onClick={(event) => {
+                closeMobileMenu(event.currentTarget);
+                void loadSession(session.id);
+              }}><RefreshCw size={17} />刷新测量单</button>
+              {REQUIRE_ACCESS_CODE && (
+                <button className="danger" type="button" onClick={(event) => {
+                  closeMobileMenu(event.currentTarget);
+                  logoutAccess();
+                }}><LogOut size={17} />退出访问码</button>
+              )}
+            </div>
+          </details>
+        )}
       </header>
 
       {message && <div className="notice">{message}</div>}
 
-      {!accessCode ? (
+      {REQUIRE_ACCESS_CODE && !accessCode ? (
         <AccessPanel
           accessInput={accessInput}
           checking={checkingAccess}
@@ -455,7 +499,25 @@ export default function App() {
         />
       ) : (
         <>
-          <section className="session-toolbar">
+          <section className="mobile-status-strip" aria-label="测量单状态与参数">
+            <CompactMetric label="班组" value={session.groups.length} />
+            <CompactMetric label="工序" value={totalProcesses} />
+            <CompactNumberField
+              label="计划产量"
+              value={session.parameters.plannedOutput}
+              placeholder="--"
+              onChange={(value) => updateParameter("plannedOutput", value)}
+            />
+            <CompactNumberField
+              label="班次工时"
+              value={session.parameters.shiftHours}
+              suffix="h"
+              onChange={(value) => updateParameter("shiftHours", value ?? 11)}
+            />
+            <CompactMetric label="保存" value={saveLabel(saveState)} state={saveState} />
+          </section>
+
+          <section className="session-toolbar desktop-session-toolbar">
             <div className="session-summary">
               <div className="metric-stack">
                 <div className="metric">
@@ -477,7 +539,7 @@ export default function App() {
               </div>
             </div>
             <div className="toolbar-buttons">
-              <button className="secondary" type="button" onClick={createNewSession} disabled={creating}>
+              <button className="secondary" type="button" onClick={openNewSessionStart}>
                 <Plus size={16} />
                 新建
               </button>
@@ -517,6 +579,17 @@ export default function App() {
               onDelete={deleteProcess}
             />
           )}
+
+          <div className={`mobile-export-bar ${mobileKeyboardVisible ? "keyboard-visible" : ""}`}>
+            <button className="secondary" type="button" onClick={() => exportWorkbook("group")} disabled={Boolean(exporting)}>
+              {exporting === "group" ? <Loader2 className="spin" size={17} /> : <Download size={17} />}
+              导出当前班组
+            </button>
+            <button className="primary" type="button" onClick={() => exportWorkbook("all")} disabled={Boolean(exporting)}>
+              {exporting === "all" ? <Loader2 className="spin" size={17} /> : <Download size={17} />}
+              导出整机
+            </button>
+          </div>
         </>
       )}
     </main>
@@ -630,6 +703,44 @@ function NumberField(props: {
         value={formatInput(props.value)}
         onChange={(event) => props.onChange(numberOrNull(event.target.value))}
       />
+    </label>
+  );
+}
+
+function CompactMetric(props: {
+  label: string;
+  value: string | number;
+  state?: SaveState;
+}) {
+  return (
+    <div className="compact-status-item">
+      <span>{props.label}</span>
+      <strong className={props.state ? `save-state ${props.state}` : ""}>{props.value}</strong>
+    </div>
+  );
+}
+
+function CompactNumberField(props: {
+  label: string;
+  value: number | null;
+  placeholder?: string;
+  suffix?: string;
+  onChange: (value: number | null) => void;
+}) {
+  return (
+    <label className="compact-status-item compact-number-field">
+      <span>{props.label}</span>
+      <span className="compact-input-wrap">
+        <input
+          aria-label={props.label}
+          type="number"
+          inputMode="decimal"
+          placeholder={props.placeholder}
+          value={formatInput(props.value)}
+          onChange={(event) => props.onChange(numberOrNull(event.target.value))}
+        />
+        {props.suffix && <small>{props.suffix}</small>}
+      </span>
     </label>
   );
 }
@@ -753,4 +864,8 @@ function saveLabel(state: SaveState) {
   if (state === "saved") return "已保存";
   if (state === "error") return "失败";
   return "待保存";
+}
+
+function closeMobileMenu(element: HTMLElement) {
+  element.closest("details")?.removeAttribute("open");
 }
