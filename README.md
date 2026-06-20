@@ -1,5 +1,29 @@
 # 工时测量与负荷山积模板
 
+## 人机作业分析自动排程模板
+
+推荐文件：
+
+`outputs/man_machine_analysis/人机作业分析自动排程模板_v1.xlsm`
+
+该模板支持最多 5 人、10 台设备、每台设备 20 个步骤，包含人员技能、设备间移动时间、自动排程、人机作业时间轴和改善前后对比。工作簿保持 5 个页面：`基础设置`、`作业步骤`、`自动排程`、`人机作业图`、`改善对比报告`。
+
+打开文件后需启用宏。推荐操作顺序：
+
+```text
+检查数据 → 生成初始方案 → 选择优化目标 → 优化排程
+→ 保存改善前/后 → 刷新报告
+```
+
+四种优化目标为：最高产能、人员均衡、设备少等待、综合优化。内置 1 人 3 机案例的基准结果为 56 秒完成 3 件，平均 18.67 秒/件。
+
+重新生成与验证：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/man_machine_analysis/build_template.ps1
+powershell -ExecutionPolicy Bypass -File tools/man_machine_analysis/verify_template.ps1
+```
+
 本仓库用于整理和维护 Excel 工时测量、标准工时计算、工序负荷山积图分析模板，并提供一个移动端优先的在线工时测量工具。
 
 项目主要资产包括 Excel 模板文件、`移动网页/` 在线录入应用、Netlify/Vercel 服务端接口，以及少量用于生成和验证模板的脚本。

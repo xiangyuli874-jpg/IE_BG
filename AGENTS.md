@@ -1,5 +1,17 @@
 # 项目说明：工时测量与负荷山积模板
 
+## 人机作业分析模板
+
+- 推荐文件：`outputs/man_machine_analysis/人机作业分析自动排程模板_v1.xlsm`
+- 构建脚本：`tools/man_machine_analysis/build_template.ps1`
+- 验证脚本：`tools/man_machine_analysis/verify_template.ps1`
+- VBA 源码：`tools/man_machine_analysis/vba/`
+- 上限：5 人、10 台设备、每台 20 步。
+- 颜色：黄色必填、浅蓝选填、灰色自动输出。
+- 核心指标：循环周期、平均节拍、小时产能、人员负荷率、设备利用与等待、移动时间。
+- 修改 VBA、工作表结构、按钮、图表或指标后，必须重新运行构建和验证脚本。
+- 新版本不得覆盖工时测量 v16 或动作要素 v3 模板。
+
 ## 项目背景
 
 本项目用于整理和生成一套 Excel 工时测量、标准工时计算、工序负荷山积图分析模板。

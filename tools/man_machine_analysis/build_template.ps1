@@ -12,7 +12,7 @@ $tempRoot = Join-Path $repoRoot '.codex_tmp\man_machine_analysis'
 $outputRoot = Join-Path $repoRoot 'outputs\man_machine_analysis'
 $finalWorkbook = Join-Path $outputRoot '人机作业分析自动排程模板_v1.xlsm'
 $buildingWorkbook = Join-Path $tempRoot '人机作业分析自动排程模板_v1.building.xlsm'
-$expectedResult = 'Test_ChineseSourceRoundTrip PASS; Test_DomainConstants PASS; Test_DomainTypes PASS; Test_BaselineFixtureExpansion PASS; Test_WorkbookStructure PASS; Test_WorkbookReaders PASS; Test_ValidationRejectsBadInputs PASS; Test_ValidationReviewFindings PASS; Test_ValidationQualityFindings PASS'
+$expectedResult = 'Test_ChineseSourceRoundTrip PASS; Test_DomainConstants PASS; Test_DomainTypes PASS; Test_BaselineFixtureExpansion PASS; Test_WorkbookStructure PASS; Test_WorkbookReaders PASS; Test_ValidationRejectsBadInputs PASS; Test_ValidationReviewFindings PASS; Test_ValidationQualityFindings PASS; Test_SchedulingCore PASS; Test_LocksAndSnapshots PASS; Test_VisualizationOutputs PASS'
 $MAX_PEOPLE = 5
 $MAX_DEVICES = 10
 $MAX_STEPS_PER_DEVICE = 20
@@ -217,6 +217,33 @@ function Set-SheetTitle {
     }
 }
 
+function Add-CommandButton {
+    param(
+        [object]$Worksheet,
+        [string]$CellAddress,
+        [string]$Caption,
+        [string]$MacroName,
+        [int]$Width = 86
+    )
+    $anchor = $null
+    $buttons = $null
+    $button = $null
+    try {
+        $anchor = $Worksheet.Range($CellAddress)
+        $buttons = $Worksheet.Buttons()
+        $button = $buttons.Add($anchor.Left, $anchor.Top, $Width, 24)
+        $button.Caption = $Caption
+        $button.OnAction = $MacroName
+        $button.Font.Name = $fontName
+        $button.Font.Size = 9
+    }
+    finally {
+        Release-ComObject $button
+        Release-ComObject $buttons
+        Release-ComObject $anchor
+    }
+}
+
 function Set-FreezePane {
     param(
         [object]$Excel,
@@ -321,6 +348,18 @@ function Initialize-WorkbookStructure {
             Build-OutputSheet -Worksheet $schedule -Title '自动排程'
             Build-OutputSheet -Worksheet $gantt -Title '人机作业图'
             Build-OutputSheet -Worksheet $report -Title '改善对比报告'
+            Add-CommandButton -Worksheet $schedule -CellAddress 'A2' -Caption '检查数据' -MacroName 'CmdCheckData'
+            Add-CommandButton -Worksheet $schedule -CellAddress 'B2' -Caption '生成初始方案' -MacroName 'CmdBuildInitial' -Width 96
+            Add-CommandButton -Worksheet $schedule -CellAddress 'C2' -Caption '优化排程' -MacroName 'CmdOptimize'
+            Add-CommandButton -Worksheet $schedule -CellAddress 'D2' -Caption '锁定/解锁' -MacroName 'CmdToggleLock'
+            Add-CommandButton -Worksheet $schedule -CellAddress 'E2' -Caption '撤回' -MacroName 'CmdUndo'
+            Add-CommandButton -Worksheet $schedule -CellAddress 'F2' -Caption '保存改善前' -MacroName 'CmdSaveBefore'
+            Add-CommandButton -Worksheet $schedule -CellAddress 'G2' -Caption '保存改善后' -MacroName 'CmdSaveAfter'
+            Add-CommandButton -Worksheet $schedule -CellAddress 'H2' -Caption '刷新报告' -MacroName 'CmdRefreshReport'
+            Add-CommandButton -Worksheet $gantt -CellAddress 'A2' -Caption '全部' -MacroName 'CmdViewAll'
+            Add-CommandButton -Worksheet $gantt -CellAddress 'B2' -Caption '仅人员' -MacroName 'CmdViewPeople'
+            Add-CommandButton -Worksheet $gantt -CellAddress 'C2' -Caption '仅设备' -MacroName 'CmdViewDevices'
+            Add-CommandButton -Worksheet $report -CellAddress 'A2' -Caption '刷新报告' -MacroName 'CmdRefreshReport'
 
             Set-FreezePane -Excel $Excel -Worksheet $settings -CellAddress 'A4'
             Set-FreezePane -Excel $Excel -Worksheet $steps -CellAddress 'A5'
@@ -410,6 +449,12 @@ function Build-SettingsSheet {
         }
         Set-RangeValues -Worksheet $Worksheet -StartRow $moveDataRow `
             -StartColumn 1 -Rows $moveDefaults
+        $sourceRow = $moveDataRow + $MAX_DEVICES + 2
+        $Worksheet.Cells.Item($sourceRow, 1).Value2 = '案例参考'
+        $Worksheet.Cells.Item($sourceRow, 1).Font.Bold = $true
+        $Worksheet.Cells.Item($sourceRow + 1, 1).Value2 = 'https://www.bilibili.com/video/BV1CtVM6AEaC/'
+        $Worksheet.Cells.Item($sourceRow + 2, 1).Value2 = 'https://www.bilibili.com/video/BV19xVE65EZL/'
+        $Worksheet.Cells.Item($sourceRow + 3, 1).Value2 = 'https://www.bilibili.com/video/BV1Sb7r6LEq6/'
 
         Set-ColumnFill -Table $parameters -ColumnNames @(
             '人员数量', '设备数量', '计划分析循环数', '优化目标', '搜索迭代次数',
@@ -490,7 +535,7 @@ function Build-StepsSheet {
     try {
         $instruction = $Worksheet.Range('A2:K2')
         [void]$instruction.Merge()
-        $instruction.Value2 = '每台设备最多 20 步；黄色为必填，浅蓝为选填。排程算法将在后续模块生成结果。'
+        $instruction.Value2 = '每台设备最多 20 步；黄色为必填，浅蓝为选填。内置案例预期：56秒完成3件，平均18.67秒/件。'
         $instruction.Interior.Color = $optionalColor
         $instruction.Font.Color = 8210719
     }
@@ -647,6 +692,7 @@ try {
     if ($null -eq $result -or [string]$result -cne $expectedResult) {
         throw "Unexpected self-test result. Expected [$expectedResult], actual [$result]"
     }
+    $book.Save()
 
 }
 finally {

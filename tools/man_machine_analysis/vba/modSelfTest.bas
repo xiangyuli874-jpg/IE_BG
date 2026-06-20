@@ -18,6 +18,9 @@ Public Function RunAllSelfTests(Optional ByVal fixturePath As String = "") As St
     Test_ValidationRejectsBadInputs
     Test_ValidationReviewFindings
     Test_ValidationQualityFindings
+    Test_SchedulingCore
+    Test_LocksAndSnapshots
+    Test_VisualizationOutputs
 
     RunAllSelfTests = ExpectedPassOutput()
     Exit Function
@@ -189,6 +192,72 @@ Public Sub Test_ValidationQualityFindings()
     elapsedSec = ElapsedSeconds(startedAt, Timer)
     AssertEqual errors, "", "200 step boundary is valid"
     AssertTrue elapsedSec < 5#, "200 step validation performance"
+End Sub
+
+Public Sub Test_SchedulingCore()
+    Dim initialSchedule As Collection, optimizedSchedule As Collection
+    Dim initialMetrics As Object, optimizedMetrics As Object
+    Dim reason As String
+
+    LoadValidationFixture "BASELINE_SCHEDULING"
+    Set initialSchedule = BuildInitialSchedule(False, 1)
+    AssertEqual initialSchedule.Count, 45, "baseline schedule task count"
+    AssertTrue IsScheduleFeasible(initialSchedule, reason), _
+        "initial schedule feasibility: " & reason
+    Set initialMetrics = CalculateMetrics(initialSchedule)
+    AssertTrue CDbl(initialMetrics("CycleTimeSec")) > 0#, "initial cycle time"
+
+    Set optimizedSchedule = OptimizeSchedule(TARGET_THROUGHPUT, 250, 12345)
+    AssertTrue IsScheduleFeasible(optimizedSchedule, reason), _
+        "optimized schedule feasibility: " & reason
+    Set optimizedMetrics = CalculateMetrics(optimizedSchedule)
+    AssertTrue CDbl(optimizedMetrics("CycleTimeSec")) <= _
+        CDbl(initialMetrics("CycleTimeSec")) + 0.000001, "throughput objective"
+    AssertTrue CDbl(optimizedMetrics("TaktSec")) > 0#, "optimized takt"
+    AssertTrue ScoreSchedule(optimizedSchedule, TARGET_BALANCE) <> _
+        ScoreSchedule(optimizedSchedule, TARGET_DEVICE_WAIT), "target scores differ"
+End Sub
+
+Public Sub Test_VisualizationOutputs()
+    Dim chartObject As ChartObject
+    LoadValidationFixture "BASELINE_SCHEDULING"
+    CmdBuildInitial
+    AssertTrue Not gCurrentSchedule Is Nothing, "current schedule exists"
+    AssertTrue ThisWorkbook.Worksheets("自动排程").ListObjects("tblSchedule") _
+        .ListRows.Count > 0, "schedule output rows"
+    On Error Resume Next
+    Set chartObject = ThisWorkbook.Worksheets("人机作业图").ChartObjects("chtManMachine")
+    On Error GoTo 0
+    AssertTrue Not chartObject Is Nothing, "gantt chart exists"
+    CmdSaveBefore
+    CmdOptimize
+    CmdSaveAfter
+    CmdRefreshReport
+    AssertTrue IsNumeric(ThisWorkbook.Worksheets("改善对比报告").Range("B4").Value2), _
+        "comparison metric is numeric"
+End Sub
+
+Public Sub Test_LocksAndSnapshots()
+    Dim optimized As Collection, restored As Collection
+    Dim lockedTask As Object, candidateTask As Object
+    Dim lockedStart As Double, lockedPerson As String
+    LoadValidationFixture "BASELINE_SCHEDULING"
+    Set gCurrentSchedule = BuildInitialSchedule(False, 1)
+    Set lockedTask = gCurrentSchedule(1)
+    lockedTask("IsLocked") = True
+    lockedStart = CDbl(lockedTask("StartSec"))
+    lockedPerson = CStr(lockedTask("PersonId"))
+    SaveScheduleSnapshot "UNDO", gCurrentSchedule
+    Set optimized = OptimizeSchedule(TARGET_COMPOSITE, 30, 7)
+    For Each candidateTask In optimized
+        If CStr(candidateTask("TaskId")) = CStr(lockedTask("TaskId")) Then
+            AssertEqual candidateTask("StartSec"), lockedStart, "locked start unchanged"
+            AssertEqual candidateTask("PersonId"), lockedPerson, "locked person unchanged"
+            Exit For
+        End If
+    Next candidateTask
+    Set restored = RestoreScheduleSnapshot("UNDO")
+    AssertEqual restored.Count, gCurrentSchedule.Count, "undo snapshot task count"
 End Sub
 
 Public Sub Test_WorkbookStructure()
@@ -576,7 +645,9 @@ Private Function ExpectedPassOutput() As String
         "Test_DomainConstants PASS; Test_DomainTypes PASS; " & _
         "Test_BaselineFixtureExpansion PASS; Test_WorkbookStructure PASS; " & _
         "Test_WorkbookReaders PASS; Test_ValidationRejectsBadInputs PASS; " & _
-        "Test_ValidationReviewFindings PASS; Test_ValidationQualityFindings PASS"
+        "Test_ValidationReviewFindings PASS; Test_ValidationQualityFindings PASS; " & _
+        "Test_SchedulingCore PASS; Test_LocksAndSnapshots PASS; " & _
+        "Test_VisualizationOutputs PASS"
 End Function
 
 Private Sub LoadValidationFixture(ByVal fixtureName As String)
@@ -662,10 +733,56 @@ Private Sub LoadValidationFixture(ByVal fixtureName As String)
             SetDeviceRelation "M1", "", ""
         Case "MAX_200_STEPS"
             LoadMaximumModel
+        Case "BASELINE_SCHEDULING"
+            LoadSchedulingBaseline
         Case Else
             Err.Raise vbObjectError + 1300, "LoadValidationFixture", _
                 "unknown validation fixture: " & fixtureName
     End Select
+End Sub
+
+Private Sub LoadSchedulingBaseline()
+    Dim peopleTable As ListObject, devicesTable As ListObject
+    Dim moveTable As ListObject, deviceIndex As Long, stepIndex As Long
+    Dim rowIndex As Long, stepNames As Variant, stepTypes As Variant
+    Dim durations As Variant, skills As Variant
+
+    Set peopleTable = ThisWorkbook.Worksheets("基础设置").ListObjects("tblPeople")
+    Set devicesTable = ThisWorkbook.Worksheets("基础设置").ListObjects("tblDevices")
+    Set moveTable = ThisWorkbook.Worksheets("基础设置").ListObjects("tblMoveTime")
+    peopleTable.DataBodyRange.ClearContents
+    devicesTable.DataBodyRange.ClearContents
+    ThisWorkbook.Worksheets("作业步骤").ListObjects("tblSteps").DataBodyRange.ClearContents
+    SetParameter "人员数量", 1
+    SetParameter "设备数量", 3
+    SetParameter "计划分析循环数", 3
+    SetParameter "优化目标", "最高产能"
+    SetParameter "搜索迭代次数", 250
+    SetTableRow peopleTable, 1, Array("P1", "操作员1", "通用", "M1,M2,M3", "是")
+    For deviceIndex = 1 To 3
+        SetTableRow devicesTable, deviceIndex, Array("M" & deviceIndex, _
+            "设备" & deviceIndex, "案例产品", "独立循环", "", "是")
+    Next deviceIndex
+    For deviceIndex = 1 To MAX_DEVICES
+        moveTable.DataBodyRange.Cells(deviceIndex, 1).Value2 = "M" & deviceIndex
+        For stepIndex = 1 To MAX_DEVICES
+            moveTable.DataBodyRange.Cells(deviceIndex, stepIndex + 1).Value2 = 0#
+        Next stepIndex
+    Next deviceIndex
+    stepNames = Array("上料", "自动运行1", "翻面", "自动运行2", "下料")
+    stepTypes = Array("人工", "自动运行", "人工", "自动运行", "人工")
+    durations = Array(5#, 20#, 6#, 15#, 5#)
+    skills = Array("通用", "", "通用", "", "通用")
+    rowIndex = 0
+    For deviceIndex = 1 To 3
+        For stepIndex = 1 To 5
+            rowIndex = rowIndex + 1
+            SetStepRow rowIndex, "M" & deviceIndex, stepIndex, _
+                stepNames(stepIndex - 1), stepTypes(stepIndex - 1), _
+                durations(stepIndex - 1), IIf(stepIndex = 1, "", stepIndex - 1), _
+                skills(stepIndex - 1)
+        Next stepIndex
+    Next deviceIndex
 End Sub
 
 Private Sub LoadMaximumModel()
