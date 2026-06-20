@@ -38,6 +38,7 @@ desktop.ini
 .vscode/
 .idea/
 .superpowers/
+.worktrees/
 
 # Local Netlify folder
 .netlify
