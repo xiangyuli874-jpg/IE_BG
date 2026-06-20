@@ -119,18 +119,18 @@ Public Function ReadSteps() As Collection
 
             stepItem("DeviceId") = deviceId
             stepItem("StepNoText") = CellText(table, rowIndex, "步骤号")
-            stepItem("StepNo") = NumericLong(CellValue(table, rowIndex, "步骤号"))
+            stepItem("StepNo") = SafeLongOrZero(CellValue(table, rowIndex, "步骤号"))
             stepItem("StepName") = CellText(table, rowIndex, "名称")
             stepItem("DisplayType") = CellText(table, rowIndex, "类型")
             stepItem("StepType") = MapStepType(stepItem("DisplayType"))
             stepItem("DurationRaw") = rawDuration
-            stepItem("DurationSec") = NumericDouble(rawDuration)
+            stepItem("DurationSec") = SafeDoubleOrZero(rawDuration)
             stepItem("PredecessorText") = CellText(table, rowIndex, "前置步骤")
             stepItem("RequiredSkill") = CellText(table, rowIndex, "所需技能")
             stepItem("LockedPersonId") = CellText(table, rowIndex, "锁定人员")
             stepItem("LockedStartRaw") = rawLockedStart
             stepItem("HasLockedStart") = HasValue(rawLockedStart)
-            stepItem("LockedStartSec") = NumericDouble(rawLockedStart)
+            stepItem("LockedStartSec") = SafeDoubleOrZero(rawLockedStart)
             stepItem("AllowWait") = CellText(table, rowIndex, "允许等待")
             stepItem("Notes") = CellText(table, rowIndex, "备注")
             stepItem("SourceRow") = table.DataBodyRange.Rows(rowIndex).Row
@@ -179,12 +179,22 @@ Private Function FindTableColumn(ByVal table As ListObject, ByVal columnName As 
     Next columnIndex
 End Function
 
-Private Function NumericLong(ByVal value As Variant) As Long
-    If HasValue(value) And IsNumeric(value) Then NumericLong = CLng(value)
+Private Function SafeLongOrZero(ByVal value As Variant) As Long
+    Dim numericValue As Double
+
+    On Error GoTo InvalidValue
+    If Not HasValue(value) Or Not IsNumeric(value) Then Exit Function
+    numericValue = CDbl(value)
+    If numericValue <= 0# Or numericValue > 2147483647# Then Exit Function
+    If numericValue <> Fix(numericValue) Then Exit Function
+    SafeLongOrZero = CLng(numericValue)
+InvalidValue:
 End Function
 
-Private Function NumericDouble(ByVal value As Variant) As Double
-    If HasValue(value) And IsNumeric(value) Then NumericDouble = CDbl(value)
+Private Function SafeDoubleOrZero(ByVal value As Variant) As Double
+    On Error GoTo InvalidValue
+    If HasValue(value) And IsNumeric(value) Then SafeDoubleOrZero = CDbl(value)
+InvalidValue:
 End Function
 
 Private Function HasValue(ByVal value As Variant) As Boolean

@@ -23,36 +23,46 @@ End Function
 Private Sub ValidateLimits(ByRef errors As String, ByVal people As Collection, _
         ByVal devices As Collection, ByVal steps As Collection)
     Dim parameters As ListObject
-    Dim configuredPeople As Variant
-    Dim configuredDevices As Variant
+    Dim configuredValue As Long
     Dim counts As Object
     Dim stepItem As Variant
     Dim deviceId As Variant
 
     Set parameters = ThisWorkbook.Worksheets("基础设置").ListObjects("tblParameters")
-    configuredPeople = parameters.ListColumns("人员数量").DataBodyRange.Cells(1, 1).Value2
-    configuredDevices = parameters.ListColumns("设备数量").DataBodyRange.Cells(1, 1).Value2
 
-    If IsNumeric(configuredPeople) Then
-        If CLng(configuredPeople) > MAX_PEOPLE Then
+    If TryParsePositiveLong(ParameterValue(parameters, "人员数量"), configuredValue) Then
+        If configuredValue > MAX_PEOPLE Then
             AddError errors, "[基础设置!tblParameters] 人员数量超过上限 " & _
                 CStr(MAX_PEOPLE) & "。"
         End If
+    Else
+        AddError errors, "[基础设置!tblParameters] 人员数量必须为正整数。"
     End If
     If people.Count > MAX_PEOPLE Then
         AddError errors, "[基础设置!tblPeople] 人员数量超过上限 " & _
             CStr(MAX_PEOPLE) & "。"
     End If
 
-    If IsNumeric(configuredDevices) Then
-        If CLng(configuredDevices) > MAX_DEVICES Then
+    If TryParsePositiveLong(ParameterValue(parameters, "设备数量"), configuredValue) Then
+        If configuredValue > MAX_DEVICES Then
             AddError errors, "[基础设置!tblParameters] 设备数量超过上限 " & _
                 CStr(MAX_DEVICES) & "。"
         End If
+    Else
+        AddError errors, "[基础设置!tblParameters] 设备数量必须为正整数。"
     End If
     If devices.Count > MAX_DEVICES Then
         AddError errors, "[基础设置!tblDevices] 设备数量超过上限 " & _
             CStr(MAX_DEVICES) & "。"
+    End If
+
+    If Not TryParsePositiveLong(ParameterValue(parameters, "计划分析循环数"), _
+            configuredValue) Then
+        AddError errors, "[基础设置!tblParameters] 计划分析循环数必须为正整数。"
+    End If
+    If Not TryParsePositiveLong(ParameterValue(parameters, "搜索迭代次数"), _
+            configuredValue) Then
+        AddError errors, "[基础设置!tblParameters] 搜索迭代次数必须为正整数。"
     End If
 
     Set counts = CreateObject("Scripting.Dictionary")
@@ -78,6 +88,9 @@ Private Sub ValidateSteps(ByRef errors As String, ByVal people As Collection, _
     Dim key As String
     Dim predecessorKey As String
     Dim earliestCache As Object
+    Dim parsedStepNo As Long
+    Dim lockedStart As Double
+    Dim cycleKey As String
 
     Set stepByKey = CreateObject("Scripting.Dictionary")
     stepByKey.CompareMode = vbTextCompare
@@ -90,9 +103,7 @@ Private Sub ValidateSteps(ByRef errors As String, ByVal people As Collection, _
         key = StepKey(stepItem("DeviceId"), stepItem("StepNoText"))
         deviceHasStep(stepItem("DeviceId")) = True
 
-        If Len(stepItem("StepNoText")) = 0 Or Not IsNumeric(stepItem("StepNoText")) Then
-            AddStepError errors, stepItem, "步骤号必须为正整数。"
-        ElseIf stepItem("StepNo") <= 0 Then
+        If Not TryParsePositiveLong(stepItem("StepNoText"), parsedStepNo) Then
             AddStepError errors, stepItem, "步骤号必须为正整数。"
         End If
 
@@ -113,6 +124,8 @@ Private Sub ValidateSteps(ByRef errors As String, ByVal people As Collection, _
             AddStepError errors, stepItem, "步骤类型无效：" & stepItem("DisplayType") & "。"
         End If
     Next stepItem
+
+    ValidateContinuousStepNumbers errors, steps
 
     For Each device In devices
         If Not deviceHasStep.Exists(device("DeviceId")) Then
@@ -142,19 +155,27 @@ Private Sub ValidateSteps(ByRef errors As String, ByVal people As Collection, _
         End If
     Next stepItem
 
-    If HasFunctionalCycle(stepByKey, True) Then
-        AddError errors, "[作业步骤!tblSteps] 步骤前置循环依赖。"
+    cycleKey = FindStepCycleNode(stepByKey)
+    If Len(cycleKey) > 0 Then
+        Set stepItem = stepByKey(cycleKey)
+        AddStepError errors, stepItem, "步骤前置循环依赖。"
     End If
 
     Set earliestCache = CreateObject("Scripting.Dictionary")
     earliestCache.CompareMode = vbTextCompare
     For Each stepItem In steps
         predecessorKey = ResolvePredecessorKey(stepItem)
-        If stepItem("HasLockedStart") And Len(predecessorKey) > 0 Then
-            If stepByKey.Exists(predecessorKey) Then
-                If stepItem("LockedStartSec") < EarliestFinish(predecessorKey, _
-                        stepByKey, earliestCache, CreateObject("Scripting.Dictionary")) Then
-                    AddStepError errors, stepItem, "锁定开始早于前置完成。"
+        If stepItem("HasLockedStart") Then
+            If Not TryParseDouble(stepItem("LockedStartRaw"), lockedStart) Then
+                AddStepError errors, stepItem, "锁定开始必须为数字。"
+            ElseIf lockedStart < 0# Then
+                AddStepError errors, stepItem, "锁定开始不能为负数。"
+            ElseIf Len(predecessorKey) > 0 Then
+                If stepByKey.Exists(predecessorKey) Then
+                    If lockedStart < EarliestFinish(predecessorKey, _
+                            stepByKey, earliestCache, CreateObject("Scripting.Dictionary")) Then
+                        AddStepError errors, stepItem, "锁定开始早于前置完成。"
+                    End If
                 End If
             End If
         End If
@@ -191,6 +212,7 @@ Private Sub ValidateDeviceRelations(ByRef errors As String, ByVal devices As Col
     Dim graph As Object
     Dim device As Variant
     Dim predecessorId As String
+    Dim cycleDeviceId As String
 
     Set deviceById = CreateObject("Scripting.Dictionary")
     deviceById.CompareMode = vbTextCompare
@@ -202,86 +224,134 @@ Private Sub ValidateDeviceRelations(ByRef errors As String, ByVal devices As Col
 
     For Each device In devices
         predecessorId = device("PredecessorDeviceId")
-        graph(device("DeviceId")) = predecessorId
         If StrComp(device("RelationType"), "有先后顺序", vbTextCompare) = 0 Then
+            graph(device("DeviceId")) = predecessorId
             If Len(predecessorId) = 0 Or Not deviceById.Exists(predecessorId) Then
                 AddError errors, "[基础设置!tblDevices 行" & CStr(device("SourceRow")) & _
                     "，设备 " & device("DeviceId") & "] 前置设备不存在。"
             End If
+        Else
+            graph(device("DeviceId")) = ""
         End If
     Next device
 
-    If HasStringGraphCycle(graph) Then
-        AddError errors, "[基础设置!tblDevices] 设备关系循环依赖。"
+    cycleDeviceId = FindStringGraphCycleNode(graph)
+    If Len(cycleDeviceId) > 0 Then
+        Set device = deviceById(cycleDeviceId)
+        AddError errors, "[基础设置!tblDevices 行" & CStr(device("SourceRow")) & _
+            "，设备 " & device("DeviceId") & "] 设备关系循环依赖。"
     End If
 End Sub
 
-Private Function HasFunctionalCycle(ByVal stepByKey As Object, _
-        ByVal useStepPredecessor As Boolean) As Boolean
+Private Function FindStepCycleNode(ByVal stepByKey As Object) As String
     Dim state As Object
     Dim key As Variant
+    Dim cycleKey As String
 
     Set state = CreateObject("Scripting.Dictionary")
     state.CompareMode = vbTextCompare
     For Each key In stepByKey.Keys
-        If VisitStepNode(CStr(key), stepByKey, state) Then
-            HasFunctionalCycle = True
+        cycleKey = VisitStepNode(CStr(key), stepByKey, state)
+        If Len(cycleKey) > 0 Then
+            FindStepCycleNode = cycleKey
             Exit Function
         End If
     Next key
 End Function
 
 Private Function VisitStepNode(ByVal key As String, ByVal stepByKey As Object, _
-        ByVal state As Object) As Boolean
+        ByVal state As Object) As String
     Dim predecessorKey As String
     If state.Exists(key) Then
-        VisitStepNode = (state(key) = 1)
+        If state(key) = 1 Then VisitStepNode = key
         Exit Function
     End If
 
     state(key) = 1
     predecessorKey = ResolvePredecessorKey(stepByKey(key))
     If Len(predecessorKey) > 0 And stepByKey.Exists(predecessorKey) Then
-        If VisitStepNode(predecessorKey, stepByKey, state) Then
-            VisitStepNode = True
-            Exit Function
-        End If
+        VisitStepNode = VisitStepNode(predecessorKey, stepByKey, state)
+        If Len(VisitStepNode) > 0 Then Exit Function
     End If
     state(key) = 2
 End Function
 
-Private Function HasStringGraphCycle(ByVal graph As Object) As Boolean
+Private Function FindStringGraphCycleNode(ByVal graph As Object) As String
     Dim state As Object
     Dim key As Variant
+    Dim cycleKey As String
 
     Set state = CreateObject("Scripting.Dictionary")
     state.CompareMode = vbTextCompare
     For Each key In graph.Keys
-        If VisitStringNode(CStr(key), graph, state) Then
-            HasStringGraphCycle = True
+        cycleKey = VisitStringNode(CStr(key), graph, state)
+        If Len(cycleKey) > 0 Then
+            FindStringGraphCycleNode = cycleKey
             Exit Function
         End If
     Next key
 End Function
 
 Private Function VisitStringNode(ByVal key As String, ByVal graph As Object, _
-        ByVal state As Object) As Boolean
+        ByVal state As Object) As String
     Dim nextKey As String
     If state.Exists(key) Then
-        VisitStringNode = (state(key) = 1)
+        If state(key) = 1 Then VisitStringNode = key
         Exit Function
     End If
 
     state(key) = 1
     nextKey = CStr(graph(key))
     If Len(nextKey) > 0 And graph.Exists(nextKey) Then
-        If VisitStringNode(nextKey, graph, state) Then
-            VisitStringNode = True
-            Exit Function
-        End If
+        VisitStringNode = VisitStringNode(nextKey, graph, state)
+        If Len(VisitStringNode) > 0 Then Exit Function
     End If
     state(key) = 2
 End Function
+
+Private Sub ValidateContinuousStepNumbers(ByRef errors As String, ByVal steps As Collection)
+    Dim numbersByDevice As Object
+    Dim firstStepByDevice As Object
+    Dim numbers As Object
+    Dim stepItem As Variant
+    Dim deviceId As Variant
+    Dim parsedStepNo As Long
+    Dim expectedNo As Long
+    Dim isContinuous As Boolean
+
+    Set numbersByDevice = CreateObject("Scripting.Dictionary")
+    numbersByDevice.CompareMode = vbTextCompare
+    Set firstStepByDevice = CreateObject("Scripting.Dictionary")
+    firstStepByDevice.CompareMode = vbTextCompare
+
+    For Each stepItem In steps
+        If TryParsePositiveLong(stepItem("StepNoText"), parsedStepNo) Then
+            If Not numbersByDevice.Exists(stepItem("DeviceId")) Then
+                Set numbers = CreateObject("Scripting.Dictionary")
+                Set numbersByDevice(stepItem("DeviceId")) = numbers
+                Set firstStepByDevice(stepItem("DeviceId")) = stepItem
+            End If
+            Set numbers = numbersByDevice(stepItem("DeviceId"))
+            numbers(CStr(parsedStepNo)) = True
+        End If
+    Next stepItem
+
+    For Each deviceId In numbersByDevice.Keys
+        Set numbers = numbersByDevice(deviceId)
+        isContinuous = True
+        For expectedNo = 1 To numbers.Count
+            If Not numbers.Exists(CStr(expectedNo)) Then
+                isContinuous = False
+                Exit For
+            End If
+        Next expectedNo
+        If Not isContinuous Then
+            Set stepItem = firstStepByDevice(deviceId)
+            AddError errors, "[作业步骤 行" & CStr(stepItem("SourceRow")) & _
+                "，设备 " & CStr(deviceId) & "] 步骤号必须从1连续且无缺失。"
+        End If
+    Next deviceId
+End Sub
 
 Private Function EarliestFinish(ByVal key As String, ByVal stepByKey As Object, _
         ByVal cache As Object, ByVal visiting As Object) As Double
@@ -400,6 +470,36 @@ End Function
 Private Function HasTextValue(ByVal value As Variant) As Boolean
     If IsError(value) Or IsEmpty(value) Then Exit Function
     HasTextValue = (Len(Trim$(CStr(value))) > 0)
+End Function
+
+Private Function ParameterValue(ByVal parameters As ListObject, _
+        ByVal columnName As String) As Variant
+    ParameterValue = parameters.ListColumns(columnName).DataBodyRange.Cells(1, 1).Value2
+End Function
+
+Private Function TryParsePositiveLong(ByVal value As Variant, _
+        ByRef parsedValue As Long) As Boolean
+    Dim numericValue As Double
+
+    On Error GoTo InvalidValue
+    parsedValue = 0
+    If Not HasTextValue(value) Or Not IsNumeric(value) Then Exit Function
+    numericValue = CDbl(value)
+    If numericValue <= 0# Or numericValue > 2147483647# Then Exit Function
+    If numericValue <> Fix(numericValue) Then Exit Function
+    parsedValue = CLng(numericValue)
+    TryParsePositiveLong = True
+InvalidValue:
+End Function
+
+Private Function TryParseDouble(ByVal value As Variant, _
+        ByRef parsedValue As Double) As Boolean
+    On Error GoTo InvalidValue
+    parsedValue = 0#
+    If Not HasTextValue(value) Or Not IsNumeric(value) Then Exit Function
+    parsedValue = CDbl(value)
+    TryParseDouble = True
+InvalidValue:
 End Function
 
 Private Sub AddStepError(ByRef errors As String, ByVal stepItem As Object, _

@@ -16,6 +16,7 @@ Public Function RunAllSelfTests(Optional ByVal fixturePath As String = "") As St
     Test_WorkbookStructure
     Test_WorkbookReaders
     Test_ValidationRejectsBadInputs
+    Test_ValidationReviewFindings
 
     RunAllSelfTests = ExpectedPassOutput()
     Exit Function
@@ -97,6 +98,49 @@ Public Sub Test_ValidationRejectsBadInputs()
     AssertContains ValidateCurrentModel(), "步骤号重复", "collect duplicate error"
     AssertContains ValidateCurrentModel(), "移动时间不能为负数", "collect move error"
     AssertContains ValidateCurrentModel(), vbLf, "errors are newline separated"
+End Sub
+
+Public Sub Test_ValidationReviewFindings()
+    Dim errors As String
+
+    LoadValidationFixture "STEP_GAP"
+    errors = ValidateCurrentModel()
+    AssertContains errors, "步骤号必须从1连续", "step sequence gap"
+    AssertContains errors, "设备 M1", "step sequence device id"
+
+    LoadValidationFixture "INDEPENDENT_STALE_PREDECESSOR"
+    errors = ValidateCurrentModel()
+    AssertNotContains errors, "设备关系循环依赖", _
+        "independent device stale predecessor is not an edge"
+
+    LoadValidationFixture "INVALID_INTEGERS"
+    errors = ValidateCurrentModel()
+    AssertContains errors, "人员数量必须为正整数", "fractional people count"
+    AssertContains errors, "设备数量必须为正整数", "oversized device count"
+    AssertContains errors, "计划分析循环数必须为正整数", "non-numeric cycle count"
+    AssertContains errors, "步骤号必须为正整数", "fractional step number"
+    AssertContains errors, vbLf, "integer errors are aggregated"
+
+    LoadValidationFixture "HUGE_STEP_NUMBER"
+    errors = ValidateCurrentModel()
+    AssertContains errors, "步骤号必须为正整数", "oversized step number"
+
+    LoadValidationFixture "INVALID_LOCKED_START"
+    errors = ValidateCurrentModel()
+    AssertContains errors, "锁定开始必须为数字", "non-numeric locked start"
+    AssertContains errors, "锁定开始不能为负数", "negative locked start"
+
+    LoadValidationFixture "CYCLIC_PREDECESSOR"
+    errors = ValidateCurrentModel()
+    AssertContains errors, "步骤前置循环依赖", "step cycle error"
+    AssertContains errors, "行", "step cycle row"
+    AssertContains errors, "M1", "step cycle resource id"
+
+    LoadValidationFixture "CYCLIC_DEVICE"
+    errors = ValidateCurrentModel()
+    AssertContains errors, "设备关系循环依赖", "device cycle error"
+    AssertContains errors, "行", "device cycle row"
+    AssertContains errors, "M1", "device cycle resource id"
 End Sub
 
 Public Sub Test_WorkbookStructure()
@@ -483,7 +527,8 @@ Private Function ExpectedPassOutput() As String
     ExpectedPassOutput = "Test_ChineseSourceRoundTrip PASS; " & _
         "Test_DomainConstants PASS; Test_DomainTypes PASS; " & _
         "Test_BaselineFixtureExpansion PASS; Test_WorkbookStructure PASS; " & _
-        "Test_WorkbookReaders PASS; Test_ValidationRejectsBadInputs PASS"
+        "Test_WorkbookReaders PASS; Test_ValidationRejectsBadInputs PASS; " & _
+        "Test_ValidationReviewFindings PASS"
 End Function
 
 Private Sub LoadValidationFixture(ByVal fixtureName As String)
@@ -529,6 +574,23 @@ Private Sub LoadValidationFixture(ByVal fixtureName As String)
         Case "MULTIPLE_ERRORS"
             SetStepRow 5, "M1", 1, "重复上料", "人工", 3#, "", "通用"
             SetMoveValue "M1", "M2", -1#
+        Case "STEP_GAP"
+            SetStepRow 1, "M1", 1, "上料", "人工", 5#, "", "通用"
+            SetStepRow 2, "M1", 3, "下料", "人工", 5#, 1, "通用"
+        Case "INDEPENDENT_STALE_PREDECESSOR"
+            SetDeviceRelation "M1", "独立循环", "M2"
+            SetDeviceRelation "M2", "有先后顺序", "M1"
+        Case "INVALID_INTEGERS"
+            SetParameter "人员数量", 1.5
+            SetParameter "设备数量", "999999999999999999999"
+            SetParameter "计划分析循环数", "三"
+            SetStepRow 1, "M1", 1.5, "上料", "人工", 5#, "", "通用"
+        Case "HUGE_STEP_NUMBER"
+            SetStepRow 1, "M1", "999999999999999999999", "上料", _
+                "人工", 5#, "", "通用"
+        Case "INVALID_LOCKED_START"
+            SetStepRow 1, "M1", 1, "上料", "人工", 5#, "", "通用", "P1", "稍后"
+            SetStepRow 2, "M1", 2, "下料", "人工", 5#, "", "通用", "P1", -1#
         Case Else
             Err.Raise vbObjectError + 1300, "LoadValidationFixture", _
                 "unknown validation fixture: " & fixtureName
@@ -617,13 +679,18 @@ Private Sub SetMoveValue(ByVal fromDevice As String, ByVal toDevice As String, _
 End Sub
 
 Private Sub SetDevicePredecessor(ByVal deviceId As String, ByVal predecessorId As String)
+    SetDeviceRelation deviceId, "有先后顺序", predecessorId
+End Sub
+
+Private Sub SetDeviceRelation(ByVal deviceId As String, ByVal relationType As String, _
+        ByVal predecessorId As String)
     Dim table As ListObject
     Dim rowIndex As Long
 
     Set table = ThisWorkbook.Worksheets("基础设置").ListObjects("tblDevices")
     For rowIndex = 1 To table.ListRows.Count
         If CStr(table.DataBodyRange.Cells(rowIndex, 1).Value2) = deviceId Then
-            table.DataBodyRange.Cells(rowIndex, 4).Value2 = "有先后顺序"
+            table.DataBodyRange.Cells(rowIndex, 4).Value2 = relationType
             table.DataBodyRange.Cells(rowIndex, 5).Value2 = predecessorId
             Exit Sub
         End If
@@ -635,6 +702,14 @@ Private Sub AssertContains(ByVal actual As String, ByVal expectedText As String,
     If InStr(1, actual, expectedText, vbTextCompare) = 0 Then
         Err.Raise vbObjectError + 1002, "AssertContains", _
             message & ": expected text [" & expectedText & "], actual [" & actual & "]"
+    End If
+End Sub
+
+Private Sub AssertNotContains(ByVal actual As String, ByVal unexpectedText As String, _
+        ByVal message As String)
+    If InStr(1, actual, unexpectedText, vbTextCompare) > 0 Then
+        Err.Raise vbObjectError + 1003, "AssertNotContains", _
+            message & ": unexpected text [" & unexpectedText & "], actual [" & actual & "]"
     End If
 End Sub
 
