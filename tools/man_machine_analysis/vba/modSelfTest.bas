@@ -14,6 +14,8 @@ Public Function RunAllSelfTests(Optional ByVal fixturePath As String = "") As St
     Test_DomainTypes
     Test_BaselineFixtureExpansion
     Test_WorkbookStructure
+    Test_WorkbookReaders
+    Test_ValidationRejectsBadInputs
 
     RunAllSelfTests = ExpectedPassOutput()
     Exit Function
@@ -25,6 +27,76 @@ End Function
 Public Sub Test_ChineseSourceRoundTrip()
     AssertEqual SourceChineseSample(), ChineseUnload() & "|" & ChineseGeneralSkill(), _
         "Chinese VBA source round trip"
+End Sub
+
+Public Sub Test_WorkbookReaders()
+    Dim people As Collection
+    Dim devices As Collection
+    Dim steps As Collection
+    Dim moveMatrix As Object
+    Dim stepItem As Object
+
+    LoadValidationFixture "VALID_MODEL"
+    Set people = ReadPeople()
+    Set devices = ReadDevices()
+    Set steps = ReadSteps()
+    Set moveMatrix = ReadMoveMatrix()
+
+    AssertEqual people.Count, 1, "disabled people are skipped"
+    AssertEqual devices.Count, 2, "disabled devices are skipped"
+    AssertEqual steps.Count, 4, "blank steps are skipped"
+    Set stepItem = steps(1)
+    AssertEqual stepItem("StepType"), STEP_MANUAL, "manual display type mapping"
+    Set stepItem = steps(2)
+    AssertEqual stepItem("StepType"), STEP_AUTO, "automatic display type mapping"
+    Set stepItem = steps(3)
+    AssertEqual stepItem("StepType"), STEP_JOINT, "joint display type mapping"
+    Set stepItem = steps(4)
+    AssertEqual stepItem("StepType"), STEP_WAIT, "wait display type mapping"
+    AssertEqual moveMatrix("M1|M2"), 2#, "move matrix read"
+End Sub
+
+Public Sub Test_ValidationRejectsBadInputs()
+    LoadValidationFixture "DUPLICATE_STEP"
+    AssertContains ValidateCurrentModel(), "步骤号重复", "duplicate step"
+
+    LoadValidationFixture "NO_SKILLED_PERSON"
+    AssertContains ValidateCurrentModel(), "无合格人员", "no skilled person"
+
+    LoadValidationFixture "CYCLIC_PREDECESSOR"
+    AssertContains ValidateCurrentModel(), "步骤前置循环依赖", "cyclic predecessor"
+
+    LoadValidationFixture "NEGATIVE_MOVE"
+    AssertContains ValidateCurrentModel(), "移动时间不能为负数", "negative move"
+
+    LoadValidationFixture "LIMITS"
+    AssertContains ValidateCurrentModel(), "人员数量超过上限", "people limit"
+    AssertContains ValidateCurrentModel(), "设备数量超过上限", "device limit"
+    AssertContains ValidateCurrentModel(), "每台设备步骤数超过上限", "step limit"
+
+    LoadValidationFixture "BAD_DURATION"
+    AssertContains ValidateCurrentModel(), "工时不能为空", "empty duration"
+    AssertContains ValidateCurrentModel(), "工时必须为正数", "non-positive duration"
+
+    LoadValidationFixture "MISSING_PREDECESSOR"
+    AssertContains ValidateCurrentModel(), "前置步骤不存在", "missing predecessor"
+
+    LoadValidationFixture "LOCKED_PERSON_SKILL"
+    AssertContains ValidateCurrentModel(), "锁定人员技能不符", "locked person skill"
+
+    LoadValidationFixture "LOCKED_START_PREDECESSOR"
+    AssertContains ValidateCurrentModel(), "锁定开始早于前置完成", "locked start"
+
+    LoadValidationFixture "MISSING_MOVE"
+    AssertContains ValidateCurrentModel(), "移动时间缺值", "missing move"
+
+    LoadValidationFixture "CYCLIC_DEVICE"
+    AssertContains ValidateCurrentModel(), "设备关系循环依赖", "cyclic device relation"
+
+    LoadValidationFixture "MULTIPLE_ERRORS"
+    AssertContains ValidateCurrentModel(), "步骤号重复", "collect duplicate error"
+    AssertContains ValidateCurrentModel(), "移动时间不能为负数", "collect move error"
+    AssertContains ValidateCurrentModel(), vbLf, "errors are newline separated"
 End Sub
 
 Public Sub Test_WorkbookStructure()
@@ -410,8 +482,161 @@ End Function
 Private Function ExpectedPassOutput() As String
     ExpectedPassOutput = "Test_ChineseSourceRoundTrip PASS; " & _
         "Test_DomainConstants PASS; Test_DomainTypes PASS; " & _
-        "Test_BaselineFixtureExpansion PASS; Test_WorkbookStructure PASS"
+        "Test_BaselineFixtureExpansion PASS; Test_WorkbookStructure PASS; " & _
+        "Test_WorkbookReaders PASS; Test_ValidationRejectsBadInputs PASS"
 End Function
+
+Private Sub LoadValidationFixture(ByVal fixtureName As String)
+    ResetValidationModel
+
+    Select Case fixtureName
+        Case "VALID_MODEL"
+            ' Baseline is already valid.
+        Case "DUPLICATE_STEP"
+            SetStepRow 5, "M1", 1, "重复上料", "人工", 3#, "", "通用"
+        Case "NO_SKILLED_PERSON"
+            ThisWorkbook.Worksheets("基础设置").ListObjects("tblPeople") _
+                .ListColumns("技能").DataBodyRange.Cells(1, 1).ClearContents
+            SetStepRow 1, "M1", 1, "上料", "人工", 5#, "", "焊接"
+        Case "CYCLIC_PREDECESSOR"
+            SetStepRow 1, "M1", 1, "上料", "人工", 5#, 2, "通用"
+            SetStepRow 2, "M1", 2, "加工", "自动运行", 10#, 1, ""
+        Case "NEGATIVE_MOVE"
+            SetMoveValue "M1", "M2", -1#
+        Case "LIMITS"
+            SetParameter "人员数量", MAX_PEOPLE + 1
+            SetParameter "设备数量", MAX_DEVICES + 1
+            Dim rowIndex As Long
+            For rowIndex = 1 To MAX_STEPS_PER_DEVICE + 1
+                SetStepRow rowIndex, "M1", rowIndex, "步骤" & CStr(rowIndex), _
+                    "自动运行", 1#, IIf(rowIndex = 1, "", rowIndex - 1), ""
+            Next rowIndex
+        Case "BAD_DURATION"
+            SetStepRow 1, "M1", 1, "空工时", "人工", "", "", "通用"
+            SetStepRow 2, "M1", 2, "零工时", "自动运行", 0#, 1, ""
+        Case "MISSING_PREDECESSOR"
+            SetStepRow 1, "M1", 1, "上料", "人工", 5#, 99, "通用"
+        Case "LOCKED_PERSON_SKILL"
+            SetStepRow 1, "M1", 1, "焊接", "人工", 5#, "", "焊接", "P1"
+        Case "LOCKED_START_PREDECESSOR"
+            SetStepRow 1, "M1", 1, "上料", "人工", 5#, "", "通用", "", 0#
+            SetStepRow 2, "M1", 2, "下料", "人工", 5#, 1, "通用", "P1", 3#
+        Case "MISSING_MOVE"
+            SetMoveValue "M1", "M2", ""
+        Case "CYCLIC_DEVICE"
+            SetDevicePredecessor "M1", "M2"
+            SetDevicePredecessor "M2", "M1"
+        Case "MULTIPLE_ERRORS"
+            SetStepRow 5, "M1", 1, "重复上料", "人工", 3#, "", "通用"
+            SetMoveValue "M1", "M2", -1#
+        Case Else
+            Err.Raise vbObjectError + 1300, "LoadValidationFixture", _
+                "unknown validation fixture: " & fixtureName
+    End Select
+End Sub
+
+Private Sub ResetValidationModel()
+    Dim peopleTable As ListObject
+    Dim devicesTable As ListObject
+    Dim moveTable As ListObject
+    Dim stepsTable As ListObject
+
+    Set peopleTable = ThisWorkbook.Worksheets("基础设置").ListObjects("tblPeople")
+    Set devicesTable = ThisWorkbook.Worksheets("基础设置").ListObjects("tblDevices")
+    Set moveTable = ThisWorkbook.Worksheets("基础设置").ListObjects("tblMoveTime")
+    Set stepsTable = ThisWorkbook.Worksheets("作业步骤").ListObjects("tblSteps")
+
+    peopleTable.DataBodyRange.ClearContents
+    devicesTable.DataBodyRange.ClearContents
+    stepsTable.DataBodyRange.ClearContents
+
+    SetParameter "人员数量", 1
+    SetParameter "设备数量", 2
+
+    SetTableRow peopleTable, 1, Array("P1", "操作员1", "通用", "M1,M2", "是")
+    SetTableRow peopleTable, 2, Array("P2", "停用人员", "焊接", "M1", "否")
+    SetTableRow devicesTable, 1, Array("M1", "设备1", "", "独立循环", "", "是")
+    SetTableRow devicesTable, 2, Array("M2", "设备2", "", "有先后顺序", "M1", "是")
+    SetTableRow devicesTable, 3, Array("M3", "停用设备", "", "独立循环", "", "否")
+
+    Dim fromIndex As Long
+    Dim toIndex As Long
+    For fromIndex = 1 To MAX_DEVICES
+        moveTable.DataBodyRange.Cells(fromIndex, 1).Value2 = "M" & CStr(fromIndex)
+        For toIndex = 1 To MAX_DEVICES
+            moveTable.DataBodyRange.Cells(fromIndex, toIndex + 1).Value2 = 0#
+        Next toIndex
+    Next fromIndex
+    SetMoveValue "M1", "M2", 2#
+    SetMoveValue "M2", "M1", 2#
+
+    SetStepRow 1, "M1", 1, "上料", "人工", 5#, "", "通用"
+    SetStepRow 2, "M1", 2, "加工", "自动运行", 10#, 1, ""
+    SetStepRow 3, "M2", 1, "协同", "人机协同", 4#, "", "通用"
+    SetStepRow 4, "M2", 2, "冷却", "等待", 3#, 1, ""
+End Sub
+
+Private Sub SetParameter(ByVal columnName As String, ByVal value As Variant)
+    ThisWorkbook.Worksheets("基础设置").ListObjects("tblParameters") _
+        .ListColumns(columnName).DataBodyRange.Cells(1, 1).Value2 = value
+End Sub
+
+Private Sub SetTableRow(ByVal table As ListObject, ByVal rowIndex As Long, _
+        ByVal values As Variant)
+    Dim columnIndex As Long
+    For columnIndex = LBound(values) To UBound(values)
+        table.DataBodyRange.Cells(rowIndex, columnIndex + 1).Value2 = values(columnIndex)
+    Next columnIndex
+End Sub
+
+Private Sub SetStepRow(ByVal rowIndex As Long, ByVal deviceId As String, _
+        ByVal stepNumber As Variant, ByVal stepName As String, ByVal displayType As String, _
+        ByVal durationSec As Variant, ByVal predecessor As Variant, ByVal skill As String, _
+        Optional ByVal lockedPerson As String = "", _
+        Optional ByVal lockedStart As Variant)
+    Dim table As ListObject
+    Dim values As Variant
+
+    Set table = ThisWorkbook.Worksheets("作业步骤").ListObjects("tblSteps")
+    values = Array(deviceId, stepNumber, stepName, displayType, durationSec, predecessor, _
+        skill, lockedPerson, "", "是", "")
+    If Not IsMissing(lockedStart) Then values(8) = lockedStart
+    SetTableRow table, rowIndex, values
+End Sub
+
+Private Sub SetMoveValue(ByVal fromDevice As String, ByVal toDevice As String, _
+        ByVal value As Variant)
+    Dim table As ListObject
+    Dim rowIndex As Long
+    Dim columnIndex As Long
+
+    Set table = ThisWorkbook.Worksheets("基础设置").ListObjects("tblMoveTime")
+    rowIndex = CLng(Mid$(fromDevice, 2))
+    columnIndex = CLng(Mid$(toDevice, 2)) + 1
+    table.DataBodyRange.Cells(rowIndex, columnIndex).Value2 = value
+End Sub
+
+Private Sub SetDevicePredecessor(ByVal deviceId As String, ByVal predecessorId As String)
+    Dim table As ListObject
+    Dim rowIndex As Long
+
+    Set table = ThisWorkbook.Worksheets("基础设置").ListObjects("tblDevices")
+    For rowIndex = 1 To table.ListRows.Count
+        If CStr(table.DataBodyRange.Cells(rowIndex, 1).Value2) = deviceId Then
+            table.DataBodyRange.Cells(rowIndex, 4).Value2 = "有先后顺序"
+            table.DataBodyRange.Cells(rowIndex, 5).Value2 = predecessorId
+            Exit Sub
+        End If
+    Next rowIndex
+End Sub
+
+Private Sub AssertContains(ByVal actual As String, ByVal expectedText As String, _
+        ByVal message As String)
+    If InStr(1, actual, expectedText, vbTextCompare) = 0 Then
+        Err.Raise vbObjectError + 1002, "AssertContains", _
+            message & ": expected text [" & expectedText & "], actual [" & actual & "]"
+    End If
+End Sub
 
 Private Sub AssertSheetExists(ByVal sheetName As String)
     Dim worksheet As Worksheet
