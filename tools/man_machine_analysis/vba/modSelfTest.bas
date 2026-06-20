@@ -84,6 +84,11 @@ Public Sub Test_BaselineFixtureExpansion()
         For cycleNumber = 1 To 3
             AssertEqual CountTasks("M" & CStr(deviceNumber), cycleNumber), 5, _
                 "five steps per device and cycle"
+            If cycleNumber > 1 Then
+                AssertEqual FindTask("M" & CStr(deviceNumber), cycleNumber, 1).PredecessorId, _
+                    "M" & CStr(deviceNumber) & "-C" & CStr(cycleNumber - 1) & "-S5", _
+                    "first step continues from previous cycle"
+            End If
         Next cycleNumber
     Next deviceNumber
 End Sub
@@ -172,6 +177,10 @@ Private Sub LoadBaselineFixture(ByVal fixturePath As String)
                         .PredecessorId = "M" & CStr(deviceNumber) & "-C" & _
                             CStr(cycleNumber) & "-S" & _
                             CStr(baseTasks(baseIndex - 1).StepNo)
+                    ElseIf cycleNumber > 1 Then
+                        .PredecessorId = "M" & CStr(deviceNumber) & "-C" & _
+                            CStr(cycleNumber - 1) & "-S" & _
+                            CStr(baseTasks(baseCount).StepNo)
                     End If
                 End With
             Next baseIndex
@@ -210,6 +219,23 @@ Private Function CountTasks(ByVal deviceId As String, ByVal cycleNumber As Long)
             CountTasks = CountTasks + 1
         End If
     Next taskIndex
+End Function
+
+Private Function FindTask(ByVal deviceId As String, ByVal cycleNumber As Long, _
+        ByVal stepNumber As Long) As TaskDef
+    Dim taskIndex As Long
+
+    For taskIndex = 1 To mBaselineTaskCount
+        If mBaselineTasks(taskIndex).DeviceId = deviceId And _
+                mBaselineTasks(taskIndex).CycleNo = cycleNumber And _
+                mBaselineTasks(taskIndex).StepNo = stepNumber Then
+            FindTask = mBaselineTasks(taskIndex)
+            Exit Function
+        End If
+    Next taskIndex
+
+    Err.Raise vbObjectError + 1105, "FindTask", _
+        "expanded task not found"
 End Function
 
 Private Sub AssertEqual(ByVal actual As Variant, ByVal expected As Variant, ByVal message As String)
