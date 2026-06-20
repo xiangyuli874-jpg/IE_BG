@@ -1,0 +1,6 @@
+DeviceId,StepNo,StepName,StepType,DurationSec,Skill
+M1,1,上料,MANUAL,5,通用
+M1,2,自动运行1,AUTO,20,
+M1,3,翻面,MANUAL,6,通用
+M1,4,自动运行2,AUTO,15,
+M1,5,下料,MANUAL,5,通用
