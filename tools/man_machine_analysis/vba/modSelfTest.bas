@@ -52,7 +52,7 @@ Public Sub Test_WorkbookStructure()
     AssertTableExists "作业步骤", "tblSteps"
 
     AssertTableHeaders "基础设置", "tblParameters", Array( _
-        "方案名称", "计划分析循环数", "优化目标", "搜索迭代次数", _
+        "方案名称", "人员数量", "设备数量", "计划分析循环数", "优化目标", "搜索迭代次数", _
         "周期权重", "均衡权重", "等待权重", "移动权重")
     AssertTableHeaders "基础设置", "tblPeople", Array( _
         "人员编号", "人员名称", "技能", "可操作设备", "启用")
@@ -77,7 +77,14 @@ Public Sub Test_WorkbookStructure()
     AssertValidationList "基础设置", "tblDevices", "启用", "是"
     AssertValidationList "作业步骤", "tblSteps", "类型", "人工"
     AssertValidationList "作业步骤", "tblSteps", "允许等待", "是"
+    AssertValidationList "作业步骤", "tblSteps", "设备", "tblDevices[设备编号]"
+    AssertValidationList "作业步骤", "tblSteps", "锁定人员", "tblPeople[人员编号]"
+    AssertValidationAllowsBlank "作业步骤", "tblSteps", "锁定人员"
 
+    AssertCellValue "基础设置", "tblParameters", "人员数量", 1
+    AssertCellValue "基础设置", "tblParameters", "设备数量", 3
+    AssertCellFill "基础设置", "tblParameters", "人员数量", RGB(255, 242, 204)
+    AssertCellFill "基础设置", "tblParameters", "设备数量", RGB(255, 242, 204)
     AssertCellFill "基础设置", "tblParameters", "计划分析循环数", RGB(255, 242, 204)
     AssertCellFill "基础设置", "tblPeople", "人员名称", RGB(221, 235, 247)
     AssertCellFill "自动排程", "", "", RGB(242, 242, 242)
@@ -443,6 +450,26 @@ Private Sub AssertValidationList(ByVal sheetName As String, ByVal tableName As S
         Err.Raise vbObjectError + 1204, "AssertValidationList", _
             tableName & "." & columnName & " validation item missing: " & expectedItem
     End If
+End Sub
+
+Private Sub AssertValidationAllowsBlank(ByVal sheetName As String, ByVal tableName As String, _
+        ByVal columnName As String)
+    Dim targetCell As Range
+
+    Set targetCell = ThisWorkbook.Worksheets(sheetName) _
+        .ListObjects(tableName).ListColumns(columnName).DataBodyRange.Cells(1, 1)
+    AssertEqual targetCell.Validation.IgnoreBlank, True, _
+        tableName & "." & columnName & " validation allows blank"
+End Sub
+
+Private Sub AssertCellValue(ByVal sheetName As String, ByVal tableName As String, _
+        ByVal columnName As String, ByVal expectedValue As Variant)
+    Dim targetCell As Range
+
+    Set targetCell = ThisWorkbook.Worksheets(sheetName) _
+        .ListObjects(tableName).ListColumns(columnName).DataBodyRange.Cells(1, 1)
+    AssertEqual targetCell.Value2, expectedValue, _
+        sheetName & " " & columnName & " default value"
 End Sub
 
 Private Sub AssertCellFill(ByVal sheetName As String, ByVal tableName As String, _

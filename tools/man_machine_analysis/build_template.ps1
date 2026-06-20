@@ -344,13 +344,13 @@ function Build-SettingsSheet {
     )
 
     Set-SheetTitle -Worksheet $Worksheet -Address 'A1:L1' -Text '人机作业分析｜基础设置'
-    Set-SectionTitle -Worksheet $Worksheet -Address 'A3:H3' -Text '分析参数'
+    Set-SectionTitle -Worksheet $Worksheet -Address 'A3:J3' -Text '分析参数'
     Set-SectionTitle -Worksheet $Worksheet -Address 'A7:E7' -Text '人员与技能'
     Set-SectionTitle -Worksheet $Worksheet -Address 'G7:L7' -Text '设备设置'
     Set-SectionTitle -Worksheet $Worksheet -Address 'A21:K21' -Text '设备间移动时间矩阵（秒）'
 
     $parameterHeaders = @(
-        '方案名称', '计划分析循环数', '优化目标', '搜索迭代次数',
+        '方案名称', '人员数量', '设备数量', '计划分析循环数', '优化目标', '搜索迭代次数',
         '周期权重', '均衡权重', '等待权重', '移动权重'
     )
     $peopleHeaders = @('人员编号', '人员名称', '技能', '可操作设备', '启用')
@@ -372,7 +372,7 @@ function Build-SettingsSheet {
             -HeaderRow 22 -StartColumn 1 -Headers $moveHeaders -DataRowCount 10
 
         Set-RangeValues -Worksheet $Worksheet -StartRow 5 -StartColumn 1 -Rows @(
-            ,([object[]]@('当前方案', 3, '综合优化', 500, 0.4, 0.2, 0.3, 0.1))
+            ,([object[]]@('当前方案', 1, 3, 3, '综合优化', 500, 0.4, 0.2, 0.3, 0.1))
         )
         Set-RangeValues -Worksheet $Worksheet -StartRow 9 -StartColumn 1 -Rows @(
             ,([object[]]@('P1', '操作员1', '通用', 'M1,M2,M3', '是'))
@@ -396,7 +396,7 @@ function Build-SettingsSheet {
         Set-RangeValues -Worksheet $Worksheet -StartRow 23 -StartColumn 1 -Rows $moveDefaults
 
         Set-ColumnFill -Table $parameters -ColumnNames @(
-            '计划分析循环数', '优化目标', '搜索迭代次数',
+            '人员数量', '设备数量', '计划分析循环数', '优化目标', '搜索迭代次数',
             '周期权重', '均衡权重', '等待权重', '移动权重'
         ) -Color $requiredColor
         Set-ColumnFill -Table $parameters -ColumnNames @('方案名称') -Color $optionalColor
@@ -417,12 +417,12 @@ function Build-SettingsSheet {
         Add-ListValidation -Table $devices -ColumnName '启用' -Formula '"是,否"'
 
         $nameTargets = @{
-            nmCycleCount = 'B5'
-            nmOptimizationTarget = 'C5'
-            nmWeightCycle = 'E5'
-            nmWeightBalance = 'F5'
-            nmWeightWait = 'G5'
-            nmWeightMove = 'H5'
+            nmCycleCount = 'D5'
+            nmOptimizationTarget = 'E5'
+            nmWeightCycle = 'G5'
+            nmWeightBalance = 'H5'
+            nmWeightWait = 'I5'
+            nmWeightMove = 'J5'
         }
         foreach ($entry in $nameTargets.GetEnumerator()) {
             $targetRange = $null
@@ -443,7 +443,8 @@ function Build-SettingsSheet {
         $Worksheet.Columns.Item('F').ColumnWidth = 12
         $Worksheet.Columns.Item('G').ColumnWidth = 13
         $Worksheet.Columns.Item('H').ColumnWidth = 13
-        $Worksheet.Columns.Item('I:L').ColumnWidth = 11
+        $Worksheet.Columns.Item('I:J').ColumnWidth = 13
+        $Worksheet.Columns.Item('K:L').ColumnWidth = 11
     }
     finally {
         Release-ComObject $moveTime
@@ -487,6 +488,10 @@ function Build-StepsSheet {
         Add-ListValidation -Table $steps -ColumnName '类型' `
             -Formula '"人工,自动运行,人机协同,等待"'
         Add-ListValidation -Table $steps -ColumnName '允许等待' -Formula '"是,否"'
+        Add-ListValidation -Table $steps -ColumnName '设备' `
+            -Formula '=INDIRECT("tblDevices[设备编号]")'
+        Add-ListValidation -Table $steps -ColumnName '锁定人员' `
+            -Formula '=INDIRECT("tblPeople[人员编号]")'
 
         $Worksheet.Columns.Item('A').ColumnWidth = 12
         $Worksheet.Columns.Item('B').ColumnWidth = 10
