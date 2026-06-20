@@ -9,17 +9,22 @@ Public Function RunAllSelfTests(Optional ByVal fixturePath As String = "") As St
     On Error GoTo TestFailed
     mFixturePath = fixturePath
 
+    Test_ChineseSourceRoundTrip
     Test_DomainConstants
     Test_DomainTypes
     Test_BaselineFixtureExpansion
 
-    RunAllSelfTests = "Test_DomainConstants PASS; Test_DomainTypes PASS; " & _
-        "Test_BaselineFixtureExpansion PASS"
+    RunAllSelfTests = ExpectedPassOutput()
     Exit Function
 
 TestFailed:
     RunAllSelfTests = "SELF_TESTS FAIL: " & Err.Description
 End Function
+
+Public Sub Test_ChineseSourceRoundTrip()
+    AssertEqual SourceChineseSample(), ChineseUnload() & "|" & ChineseGeneralSkill(), _
+        "Chinese VBA source round trip"
+End Sub
 
 Public Sub Test_DomainConstants()
     AssertEqual STEP_MANUAL, "MANUAL", "manual step constant"
@@ -39,10 +44,10 @@ Public Sub Test_DomainTypes()
     definition.DeviceId = "M2"
     definition.CycleNo = 3
     definition.StepNo = 5
-    definition.StepName = "下料"
+    definition.StepName = SourceChineseUnload()
     definition.StepType = STEP_MANUAL
     definition.DurationSec = 5#
-    definition.RequiredSkill = "通用"
+    definition.RequiredSkill = SourceChineseGeneralSkill()
     definition.PredecessorId = "M2-C3-S4"
     definition.LockedPersonId = "P1"
     definition.LockedStartSec = 120#
@@ -60,8 +65,11 @@ Public Sub Test_DomainTypes()
     AssertEqual scheduled.Definition.DeviceId, "M2", "task device"
     AssertEqual scheduled.Definition.CycleNo, 3, "task cycle"
     AssertEqual scheduled.Definition.StepNo, 5, "task step"
+    AssertEqual scheduled.Definition.StepName, ChineseUnload(), "task Chinese step name"
     AssertEqual scheduled.Definition.StepType, STEP_MANUAL, "task step type"
     AssertEqual scheduled.Definition.DurationSec, 5#, "task duration"
+    AssertEqual scheduled.Definition.RequiredSkill, ChineseGeneralSkill(), _
+        "task Chinese skill"
     AssertEqual scheduled.PersonId, "P1", "scheduled person"
     AssertEqual scheduled.StartSec, 120#, "scheduled start"
     AssertEqual scheduled.EndSec, 125#, "scheduled end"
@@ -84,6 +92,7 @@ Public Sub Test_BaselineFixtureExpansion()
         For cycleNumber = 1 To 3
             AssertEqual CountTasks("M" & CStr(deviceNumber), cycleNumber), 5, _
                 "five steps per device and cycle"
+            AssertBaselineTaskFields "M" & CStr(deviceNumber), cycleNumber
             If cycleNumber > 1 Then
                 AssertEqual FindTask("M" & CStr(deviceNumber), cycleNumber, 1).PredecessorId, _
                     "M" & CStr(deviceNumber) & "-C" & CStr(cycleNumber - 1) & "-S5", _
@@ -92,6 +101,39 @@ Public Sub Test_BaselineFixtureExpansion()
         Next cycleNumber
     Next deviceNumber
 End Sub
+
+Private Sub AssertBaselineTaskFields(ByVal deviceId As String, ByVal cycleNumber As Long)
+    AssertTaskFields FindTask(deviceId, cycleNumber, 1), ChineseLoad(), _
+        STEP_MANUAL, 5#, ChineseGeneralSkill(), ExpectedPredecessor(deviceId, cycleNumber, 1)
+    AssertTaskFields FindTask(deviceId, cycleNumber, 2), ChineseAutoRun() & "1", _
+        STEP_AUTO, 20#, "", ExpectedPredecessor(deviceId, cycleNumber, 2)
+    AssertTaskFields FindTask(deviceId, cycleNumber, 3), ChineseTurnOver(), _
+        STEP_MANUAL, 6#, ChineseGeneralSkill(), ExpectedPredecessor(deviceId, cycleNumber, 3)
+    AssertTaskFields FindTask(deviceId, cycleNumber, 4), ChineseAutoRun() & "2", _
+        STEP_AUTO, 15#, "", ExpectedPredecessor(deviceId, cycleNumber, 4)
+    AssertTaskFields FindTask(deviceId, cycleNumber, 5), ChineseUnload(), _
+        STEP_MANUAL, 5#, ChineseGeneralSkill(), ExpectedPredecessor(deviceId, cycleNumber, 5)
+End Sub
+
+Private Sub AssertTaskFields(ByRef task As TaskDef, ByVal stepName As String, _
+        ByVal stepType As String, ByVal durationSec As Double, ByVal skill As String, _
+        ByVal predecessorId As String)
+    AssertEqual task.StepName, stepName, "baseline step name"
+    AssertEqual task.StepType, stepType, "baseline step type"
+    AssertEqual task.DurationSec, durationSec, "baseline duration"
+    AssertEqual task.RequiredSkill, skill, "baseline skill"
+    AssertEqual task.PredecessorId, predecessorId, "baseline predecessor"
+End Sub
+
+Private Function ExpectedPredecessor(ByVal deviceId As String, ByVal cycleNumber As Long, _
+        ByVal stepNumber As Long) As String
+    If stepNumber > 1 Then
+        ExpectedPredecessor = deviceId & "-C" & CStr(cycleNumber) & _
+            "-S" & CStr(stepNumber - 1)
+    ElseIf cycleNumber > 1 Then
+        ExpectedPredecessor = deviceId & "-C" & CStr(cycleNumber - 1) & "-S5"
+    End If
+End Function
 
 Private Sub LoadBaselineFixture(ByVal fixturePath As String)
     Dim stream As Object
@@ -236,6 +278,45 @@ Private Function FindTask(ByVal deviceId As String, ByVal cycleNumber As Long, _
 
     Err.Raise vbObjectError + 1105, "FindTask", _
         "expanded task not found"
+End Function
+
+Private Function SourceChineseSample() As String
+    SourceChineseSample = "下料|通用"
+End Function
+
+Private Function SourceChineseUnload() As String
+    SourceChineseUnload = "下料"
+End Function
+
+Private Function SourceChineseGeneralSkill() As String
+    SourceChineseGeneralSkill = "通用"
+End Function
+
+Private Function ChineseLoad() As String
+    ChineseLoad = ChrW$(&H4E0A) & ChrW$(&H6599)
+End Function
+
+Private Function ChineseUnload() As String
+    ChineseUnload = ChrW$(&H4E0B) & ChrW$(&H6599)
+End Function
+
+Private Function ChineseGeneralSkill() As String
+    ChineseGeneralSkill = ChrW$(&H901A) & ChrW$(&H7528)
+End Function
+
+Private Function ChineseAutoRun() As String
+    ChineseAutoRun = ChrW$(&H81EA) & ChrW$(&H52A8) & _
+        ChrW$(&H8FD0) & ChrW$(&H884C)
+End Function
+
+Private Function ChineseTurnOver() As String
+    ChineseTurnOver = ChrW$(&H7FFB) & ChrW$(&H9762)
+End Function
+
+Private Function ExpectedPassOutput() As String
+    ExpectedPassOutput = "Test_ChineseSourceRoundTrip PASS; " & _
+        "Test_DomainConstants PASS; Test_DomainTypes PASS; " & _
+        "Test_BaselineFixtureExpansion PASS"
 End Function
 
 Private Sub AssertEqual(ByVal actual As Variant, ByVal expected As Variant, ByVal message As String)
