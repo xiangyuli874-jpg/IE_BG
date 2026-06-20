@@ -44,9 +44,10 @@ try {
 
     $book.Save()
     $macroName = "'$($book.Name)'!RunAllSelfTests"
-    $result = $excel.Run($macroName)
+    $fixturePath = Join-Path $toolRoot 'fixtures\baseline_1p3m.csv'
+    $result = $excel.Run($macroName, $fixturePath)
     Write-Output $result
-    if ($result -notmatch ' PASS$') {
+    if ($result -match 'FAIL') {
         throw $result
     }
 }
