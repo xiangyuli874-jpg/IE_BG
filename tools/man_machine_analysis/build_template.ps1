@@ -11,7 +11,11 @@ $vbaRoot = Join-Path $toolRoot 'vba'
 $tempRoot = Join-Path $repoRoot '.codex_tmp\man_machine_analysis'
 $outputRoot = Join-Path $repoRoot 'outputs\man_machine_analysis'
 $finalWorkbook = Join-Path $outputRoot '人机作业分析自动排程模板_v1.xlsm'
+$buildingWorkbook = Join-Path $tempRoot '人机作业分析自动排程模板_v1.building.xlsm'
 $expectedResult = 'Test_ChineseSourceRoundTrip PASS; Test_DomainConstants PASS; Test_DomainTypes PASS; Test_BaselineFixtureExpansion PASS; Test_WorkbookStructure PASS'
+$MAX_PEOPLE = 5
+$MAX_DEVICES = 10
+$MAX_STEPS_PER_DEVICE = 20
 
 $xlSrcRange = 1
 $xlYes = 1
@@ -343,11 +347,18 @@ function Build-SettingsSheet {
         [object]$Worksheet
     )
 
+    $resourceHeaderRow = 8
+    $resourceDataRow = $resourceHeaderRow + 1
+    $moveSectionRow = $resourceHeaderRow + [Math]::Max($MAX_PEOPLE, $MAX_DEVICES) + 3
+    $moveHeaderRow = $moveSectionRow + 1
+    $moveDataRow = $moveHeaderRow + 1
+
     Set-SheetTitle -Worksheet $Worksheet -Address 'A1:L1' -Text '人机作业分析｜基础设置'
     Set-SectionTitle -Worksheet $Worksheet -Address 'A3:J3' -Text '分析参数'
     Set-SectionTitle -Worksheet $Worksheet -Address 'A7:E7' -Text '人员与技能'
     Set-SectionTitle -Worksheet $Worksheet -Address 'G7:L7' -Text '设备设置'
-    Set-SectionTitle -Worksheet $Worksheet -Address 'A21:K21' -Text '设备间移动时间矩阵（秒）'
+    Set-SectionTitle -Worksheet $Worksheet `
+        -Address "A${moveSectionRow}:K${moveSectionRow}" -Text '设备间移动时间矩阵（秒）'
 
     $parameterHeaders = @(
         '方案名称', '人员数量', '设备数量', '计划分析循环数', '优化目标', '搜索迭代次数',
@@ -355,7 +366,7 @@ function Build-SettingsSheet {
     )
     $peopleHeaders = @('人员编号', '人员名称', '技能', '可操作设备', '启用')
     $deviceHeaders = @('设备编号', '设备名称', '产品', '关系类型', '前置设备', '启用')
-    $moveHeaders = @('起点', 'M1', 'M2', 'M3', 'M4', 'M5', 'M6', 'M7', 'M8', 'M9', 'M10')
+    $moveHeaders = @('起点') + (1..$MAX_DEVICES | ForEach-Object { "M$_" })
 
     $parameters = $null
     $people = $null
@@ -365,35 +376,40 @@ function Build-SettingsSheet {
         $parameters = Add-InputTable -Worksheet $Worksheet -TableName 'tblParameters' `
             -HeaderRow 4 -StartColumn 1 -Headers $parameterHeaders -DataRowCount 1
         $people = Add-InputTable -Worksheet $Worksheet -TableName 'tblPeople' `
-            -HeaderRow 8 -StartColumn 1 -Headers $peopleHeaders -DataRowCount 5
+            -HeaderRow $resourceHeaderRow -StartColumn 1 -Headers $peopleHeaders `
+            -DataRowCount $MAX_PEOPLE
         $devices = Add-InputTable -Worksheet $Worksheet -TableName 'tblDevices' `
-            -HeaderRow 8 -StartColumn 7 -Headers $deviceHeaders -DataRowCount 10
+            -HeaderRow $resourceHeaderRow -StartColumn 7 -Headers $deviceHeaders `
+            -DataRowCount $MAX_DEVICES
         $moveTime = Add-InputTable -Worksheet $Worksheet -TableName 'tblMoveTime' `
-            -HeaderRow 22 -StartColumn 1 -Headers $moveHeaders -DataRowCount 10
+            -HeaderRow $moveHeaderRow -StartColumn 1 -Headers $moveHeaders `
+            -DataRowCount $MAX_DEVICES
 
         Set-RangeValues -Worksheet $Worksheet -StartRow 5 -StartColumn 1 -Rows @(
             ,([object[]]@('当前方案', 1, 3, 3, '综合优化', 500, 0.4, 0.2, 0.3, 0.1))
         )
-        Set-RangeValues -Worksheet $Worksheet -StartRow 9 -StartColumn 1 -Rows @(
+        Set-RangeValues -Worksheet $Worksheet -StartRow $resourceDataRow -StartColumn 1 -Rows @(
             ,([object[]]@('P1', '操作员1', '通用', 'M1,M2,M3', '是'))
         )
         $deviceDefaults = @()
-        for ($deviceIndex = 1; $deviceIndex -le 10; $deviceIndex++) {
+        for ($deviceIndex = 1; $deviceIndex -le $MAX_DEVICES; $deviceIndex++) {
             $deviceDefaults += ,([object[]]@(
                 "M$deviceIndex", "设备$deviceIndex", '', '独立循环', '', $(if ($deviceIndex -le 3) { '是' } else { '否' })
             ))
         }
-        Set-RangeValues -Worksheet $Worksheet -StartRow 9 -StartColumn 7 -Rows $deviceDefaults
+        Set-RangeValues -Worksheet $Worksheet -StartRow $resourceDataRow `
+            -StartColumn 7 -Rows $deviceDefaults
         $moveDefaults = @()
-        for ($fromIndex = 1; $fromIndex -le 10; $fromIndex++) {
-            $row = [object[]]::new(11)
+        for ($fromIndex = 1; $fromIndex -le $MAX_DEVICES; $fromIndex++) {
+            $row = [object[]]::new($MAX_DEVICES + 1)
             $row[0] = "M$fromIndex"
-            for ($toIndex = 1; $toIndex -le 10; $toIndex++) {
+            for ($toIndex = 1; $toIndex -le $MAX_DEVICES; $toIndex++) {
                 $row[$toIndex] = 0
             }
             $moveDefaults += ,$row
         }
-        Set-RangeValues -Worksheet $Worksheet -StartRow 23 -StartColumn 1 -Rows $moveDefaults
+        Set-RangeValues -Worksheet $Worksheet -StartRow $moveDataRow `
+            -StartColumn 1 -Rows $moveDefaults
 
         Set-ColumnFill -Table $parameters -ColumnNames @(
             '人员数量', '设备数量', '计划分析循环数', '优化目标', '搜索迭代次数',
@@ -433,6 +449,18 @@ function Build-SettingsSheet {
             finally {
                 Release-ComObject $targetRange
             }
+        }
+        $deviceIds = $null
+        $personIds = $null
+        try {
+            $deviceIds = $devices.ListColumns.Item('设备编号').DataBodyRange
+            Add-WorkbookName -Book $Book -Name 'nmDeviceIds' -TargetRange $deviceIds
+            $personIds = $people.ListColumns.Item('人员编号').DataBodyRange
+            Add-WorkbookName -Book $Book -Name 'nmPersonIds' -TargetRange $personIds
+        }
+        finally {
+            Release-ComObject $personIds
+            Release-ComObject $deviceIds
         }
 
         $Worksheet.Columns.Item('A').ColumnWidth = 13
@@ -478,7 +506,8 @@ function Build-StepsSheet {
     $steps = $null
     try {
         $steps = Add-InputTable -Worksheet $Worksheet -TableName 'tblSteps' `
-            -HeaderRow 4 -StartColumn 1 -Headers $headers -DataRowCount 200
+            -HeaderRow 4 -StartColumn 1 -Headers $headers `
+            -DataRowCount ($MAX_DEVICES * $MAX_STEPS_PER_DEVICE)
         Set-ColumnFill -Table $steps -ColumnNames @(
             '设备', '步骤号', '名称', '类型', '工时(s)'
         ) -Color $requiredColor
@@ -489,9 +518,9 @@ function Build-StepsSheet {
             -Formula '"人工,自动运行,人机协同,等待"'
         Add-ListValidation -Table $steps -ColumnName '允许等待' -Formula '"是,否"'
         Add-ListValidation -Table $steps -ColumnName '设备' `
-            -Formula '=INDIRECT("tblDevices[设备编号]")'
+            -Formula '=nmDeviceIds'
         Add-ListValidation -Table $steps -ColumnName '锁定人员' `
-            -Formula '=INDIRECT("tblPeople[人员编号]")'
+            -Formula '=nmPersonIds'
 
         $Worksheet.Columns.Item('A').ColumnWidth = 12
         $Worksheet.Columns.Item('B').ColumnWidth = 10
@@ -586,7 +615,11 @@ $workbookPath = if ($TestOnly) {
     Join-Path $tempRoot "workbook_structure_test_$stamp.xlsm"
 }
 else {
-    $finalWorkbook
+    $buildingWorkbook
+}
+
+if (-not $TestOnly -and (Test-Path -LiteralPath $buildingWorkbook)) {
+    Remove-Item -LiteralPath $buildingWorkbook
 }
 
 $excel = $null
@@ -615,9 +648,6 @@ try {
         throw "Unexpected self-test result. Expected [$expectedResult], actual [$result]"
     }
 
-    if (-not $TestOnly) {
-        Write-Output "OUTPUT: $finalWorkbook"
-    }
 }
 finally {
     if ($null -ne $book) {
@@ -651,4 +681,9 @@ finally {
     if ($TestOnly -and (Test-Path -LiteralPath $workbookPath)) {
         Remove-Item -LiteralPath $workbookPath
     }
+}
+
+if (-not $TestOnly) {
+    Move-Item -LiteralPath $buildingWorkbook -Destination $finalWorkbook -Force
+    Write-Output "OUTPUT: $finalWorkbook"
 }

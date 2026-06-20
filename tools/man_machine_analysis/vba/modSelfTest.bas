@@ -70,6 +70,25 @@ Public Sub Test_WorkbookStructure()
     AssertNameExists "nmWeightBalance"
     AssertNameExists "nmWeightWait"
     AssertNameExists "nmWeightMove"
+    AssertNameExists "nmDeviceIds"
+    AssertNameExists "nmPersonIds"
+
+    AssertWorkbookNameTargetsCell "nmOptimizationTarget", "基础设置", _
+        "tblParameters", "优化目标"
+    AssertWorkbookNameTargetsCell "nmCycleCount", "基础设置", _
+        "tblParameters", "计划分析循环数"
+    AssertWorkbookNameTargetsCell "nmWeightCycle", "基础设置", _
+        "tblParameters", "周期权重"
+    AssertWorkbookNameTargetsCell "nmWeightBalance", "基础设置", _
+        "tblParameters", "均衡权重"
+    AssertWorkbookNameTargetsCell "nmWeightWait", "基础设置", _
+        "tblParameters", "等待权重"
+    AssertWorkbookNameTargetsCell "nmWeightMove", "基础设置", _
+        "tblParameters", "移动权重"
+    AssertWorkbookNameTargetsColumn "nmDeviceIds", "基础设置", _
+        "tblDevices", "设备编号"
+    AssertWorkbookNameTargetsColumn "nmPersonIds", "基础设置", _
+        "tblPeople", "人员编号"
 
     AssertValidationList "基础设置", "tblParameters", "优化目标", "最高产能"
     AssertValidationList "基础设置", "tblPeople", "启用", "是"
@@ -77,9 +96,19 @@ Public Sub Test_WorkbookStructure()
     AssertValidationList "基础设置", "tblDevices", "启用", "是"
     AssertValidationList "作业步骤", "tblSteps", "类型", "人工"
     AssertValidationList "作业步骤", "tblSteps", "允许等待", "是"
-    AssertValidationList "作业步骤", "tblSteps", "设备", "tblDevices[设备编号]"
-    AssertValidationList "作业步骤", "tblSteps", "锁定人员", "tblPeople[人员编号]"
+    AssertResolvableListValidation "作业步骤", "tblSteps", "设备", _
+        "nmDeviceIds", "基础设置", "tblDevices", "设备编号"
+    AssertResolvableListValidation "作业步骤", "tblSteps", "锁定人员", _
+        "nmPersonIds", "基础设置", "tblPeople", "人员编号"
     AssertValidationAllowsBlank "作业步骤", "tblSteps", "锁定人员"
+
+    AssertTableCapacity "基础设置", "tblPeople", MAX_PEOPLE
+    AssertTableCapacity "基础设置", "tblDevices", MAX_DEVICES
+    AssertTableCapacity "基础设置", "tblMoveTime", MAX_DEVICES
+    AssertEqual ThisWorkbook.Worksheets("基础设置").ListObjects("tblMoveTime") _
+        .ListColumns.Count, MAX_DEVICES + 1, "move matrix column capacity"
+    AssertTableCapacity "作业步骤", "tblSteps", _
+        MAX_DEVICES * MAX_STEPS_PER_DEVICE
 
     AssertCellValue "基础设置", "tblParameters", "人员数量", 1
     AssertCellValue "基础设置", "tblParameters", "设备数量", 3
@@ -434,6 +463,40 @@ Private Sub AssertNameExists(ByVal definedName As String)
     End If
 End Sub
 
+Private Sub AssertWorkbookNameTargetsCell(ByVal definedName As String, _
+        ByVal sheetName As String, ByVal tableName As String, ByVal columnName As String)
+    Dim targetCell As Range
+
+    Set targetCell = ThisWorkbook.Worksheets(sheetName).ListObjects(tableName) _
+        .ListColumns(columnName).DataBodyRange.Cells(1, 1)
+    AssertWorkbookNameTargetsRange definedName, targetCell
+End Sub
+
+Private Sub AssertWorkbookNameTargetsColumn(ByVal definedName As String, _
+        ByVal sheetName As String, ByVal tableName As String, ByVal columnName As String)
+    Dim targetRange As Range
+
+    Set targetRange = ThisWorkbook.Worksheets(sheetName).ListObjects(tableName) _
+        .ListColumns(columnName).DataBodyRange
+    AssertWorkbookNameTargetsRange definedName, targetRange
+End Sub
+
+Private Sub AssertWorkbookNameTargetsRange(ByVal definedName As String, _
+        ByVal expectedRange As Range)
+    Dim workbookName As Name
+    Dim actualRange As Range
+
+    Set workbookName = ThisWorkbook.Names(definedName)
+    If TypeName(workbookName.Parent) <> "Workbook" Then
+        Err.Raise vbObjectError + 1205, "AssertWorkbookNameTargetsRange", _
+            definedName & " must have workbook scope"
+    End If
+    Set actualRange = workbookName.RefersToRange
+    AssertEqual actualRange.Address(True, True, xlA1, True), _
+        expectedRange.Address(True, True, xlA1, True), _
+        definedName & " target range"
+End Sub
+
 Private Sub AssertValidationList(ByVal sheetName As String, ByVal tableName As String, _
         ByVal columnName As String, ByVal expectedItem As String)
     Dim targetCell As Range
@@ -450,6 +513,46 @@ Private Sub AssertValidationList(ByVal sheetName As String, ByVal tableName As S
         Err.Raise vbObjectError + 1204, "AssertValidationList", _
             tableName & "." & columnName & " validation item missing: " & expectedItem
     End If
+End Sub
+
+Private Sub AssertResolvableListValidation(ByVal sheetName As String, ByVal tableName As String, _
+        ByVal columnName As String, ByVal expectedName As String, _
+        ByVal sourceSheetName As String, ByVal sourceTableName As String, _
+        ByVal sourceColumnName As String)
+    Dim targetCell As Range
+    Dim resolvedRange As Range
+    Dim expectedRange As Range
+    Dim formulaText As String
+
+    Set targetCell = ThisWorkbook.Worksheets(sheetName) _
+        .ListObjects(tableName).ListColumns(columnName).DataBodyRange.Cells(1, 1)
+    If targetCell.Validation.Type <> xlValidateList Then
+        Err.Raise vbObjectError + 1206, "AssertResolvableListValidation", _
+            tableName & "." & columnName & " validation missing"
+    End If
+    formulaText = targetCell.Validation.Formula1
+    AssertEqual formulaText, "=" & expectedName, _
+        tableName & "." & columnName & " validation formula"
+
+    On Error Resume Next
+    Set resolvedRange = targetCell.Parent.Evaluate(formulaText)
+    On Error GoTo 0
+    If resolvedRange Is Nothing Then
+        Err.Raise vbObjectError + 1207, "AssertResolvableListValidation", _
+            tableName & "." & columnName & " validation source cannot be evaluated"
+    End If
+
+    Set expectedRange = ThisWorkbook.Worksheets(sourceSheetName) _
+        .ListObjects(sourceTableName).ListColumns(sourceColumnName).DataBodyRange
+    AssertEqual resolvedRange.Address(True, True, xlA1, True), _
+        expectedRange.Address(True, True, xlA1, True), _
+        tableName & "." & columnName & " resolved validation source"
+End Sub
+
+Private Sub AssertTableCapacity(ByVal sheetName As String, ByVal tableName As String, _
+        ByVal expectedRows As Long)
+    AssertEqual ThisWorkbook.Worksheets(sheetName).ListObjects(tableName) _
+        .ListRows.Count, expectedRows, tableName & " row capacity"
 End Sub
 
 Private Sub AssertValidationAllowsBlank(ByVal sheetName As String, ByVal tableName As String, _
