@@ -13,6 +13,7 @@ Public Function RunAllSelfTests(Optional ByVal fixturePath As String = "") As St
     Test_DomainConstants
     Test_DomainTypes
     Test_BaselineFixtureExpansion
+    Test_WorkbookStructure
 
     RunAllSelfTests = ExpectedPassOutput()
     Exit Function
@@ -24,6 +25,63 @@ End Function
 Public Sub Test_ChineseSourceRoundTrip()
     AssertEqual SourceChineseSample(), ChineseUnload() & "|" & ChineseGeneralSkill(), _
         "Chinese VBA source round trip"
+End Sub
+
+Public Sub Test_WorkbookStructure()
+    Dim expectedSheets As Variant
+    Dim sheetName As Variant
+    Dim visibleCount As Long
+    Dim worksheet As Worksheet
+
+    expectedSheets = Array("基础设置", "作业步骤", "自动排程", _
+        "人机作业图", "改善对比报告")
+
+    For Each worksheet In ThisWorkbook.Worksheets
+        If worksheet.Visible = xlSheetVisible Then visibleCount = visibleCount + 1
+    Next worksheet
+    AssertEqual visibleCount, 5, "visible worksheet count"
+
+    For Each sheetName In expectedSheets
+        AssertSheetExists CStr(sheetName)
+    Next sheetName
+
+    AssertTableExists "基础设置", "tblParameters"
+    AssertTableExists "基础设置", "tblPeople"
+    AssertTableExists "基础设置", "tblDevices"
+    AssertTableExists "基础设置", "tblMoveTime"
+    AssertTableExists "作业步骤", "tblSteps"
+
+    AssertTableHeaders "基础设置", "tblParameters", Array( _
+        "方案名称", "计划分析循环数", "优化目标", "搜索迭代次数", _
+        "周期权重", "均衡权重", "等待权重", "移动权重")
+    AssertTableHeaders "基础设置", "tblPeople", Array( _
+        "人员编号", "人员名称", "技能", "可操作设备", "启用")
+    AssertTableHeaders "基础设置", "tblDevices", Array( _
+        "设备编号", "设备名称", "产品", "关系类型", "前置设备", "启用")
+    AssertTableHeaders "基础设置", "tblMoveTime", Array( _
+        "起点", "M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10")
+    AssertTableHeaders "作业步骤", "tblSteps", Array( _
+        "设备", "步骤号", "名称", "类型", "工时(s)", "前置步骤", _
+        "所需技能", "锁定人员", "锁定开始(s)", "允许等待", "备注")
+
+    AssertNameExists "nmOptimizationTarget"
+    AssertNameExists "nmCycleCount"
+    AssertNameExists "nmWeightCycle"
+    AssertNameExists "nmWeightBalance"
+    AssertNameExists "nmWeightWait"
+    AssertNameExists "nmWeightMove"
+
+    AssertValidationList "基础设置", "tblParameters", "优化目标", "最高产能"
+    AssertValidationList "基础设置", "tblPeople", "启用", "是"
+    AssertValidationList "基础设置", "tblDevices", "关系类型", "独立循环"
+    AssertValidationList "基础设置", "tblDevices", "启用", "是"
+    AssertValidationList "作业步骤", "tblSteps", "类型", "人工"
+    AssertValidationList "作业步骤", "tblSteps", "允许等待", "是"
+
+    AssertCellFill "基础设置", "tblParameters", "计划分析循环数", RGB(255, 242, 204)
+    AssertCellFill "基础设置", "tblPeople", "人员名称", RGB(221, 235, 247)
+    AssertCellFill "自动排程", "", "", RGB(242, 242, 242)
+    AssertWorkbookFont "微软雅黑"
 End Sub
 
 Public Sub Test_DomainConstants()
@@ -316,8 +374,99 @@ End Function
 Private Function ExpectedPassOutput() As String
     ExpectedPassOutput = "Test_ChineseSourceRoundTrip PASS; " & _
         "Test_DomainConstants PASS; Test_DomainTypes PASS; " & _
-        "Test_BaselineFixtureExpansion PASS"
+        "Test_BaselineFixtureExpansion PASS; Test_WorkbookStructure PASS"
 End Function
+
+Private Sub AssertSheetExists(ByVal sheetName As String)
+    Dim worksheet As Worksheet
+
+    On Error Resume Next
+    Set worksheet = ThisWorkbook.Worksheets(sheetName)
+    On Error GoTo 0
+    If worksheet Is Nothing Then
+        Err.Raise vbObjectError + 1200, "AssertSheetExists", _
+            sheetName & " sheet missing"
+    End If
+End Sub
+
+Private Sub AssertTableExists(ByVal sheetName As String, ByVal tableName As String)
+    Dim table As ListObject
+
+    On Error Resume Next
+    Set table = ThisWorkbook.Worksheets(sheetName).ListObjects(tableName)
+    On Error GoTo 0
+    If table Is Nothing Then
+        Err.Raise vbObjectError + 1201, "AssertTableExists", _
+            tableName & " table missing"
+    End If
+End Sub
+
+Private Sub AssertTableHeaders(ByVal sheetName As String, ByVal tableName As String, _
+        ByVal expectedHeaders As Variant)
+    Dim table As ListObject
+    Dim headerIndex As Long
+
+    Set table = ThisWorkbook.Worksheets(sheetName).ListObjects(tableName)
+    AssertEqual table.ListColumns.Count, UBound(expectedHeaders) + 1, _
+        tableName & " column count"
+    For headerIndex = 0 To UBound(expectedHeaders)
+        AssertEqual table.HeaderRowRange.Cells(1, headerIndex + 1).Value2, _
+            expectedHeaders(headerIndex), tableName & " header " & CStr(headerIndex + 1)
+    Next headerIndex
+End Sub
+
+Private Sub AssertNameExists(ByVal definedName As String)
+    Dim workbookName As Name
+
+    On Error Resume Next
+    Set workbookName = ThisWorkbook.Names(definedName)
+    On Error GoTo 0
+    If workbookName Is Nothing Then
+        Err.Raise vbObjectError + 1202, "AssertNameExists", _
+            definedName & " name missing"
+    End If
+End Sub
+
+Private Sub AssertValidationList(ByVal sheetName As String, ByVal tableName As String, _
+        ByVal columnName As String, ByVal expectedItem As String)
+    Dim targetCell As Range
+    Dim formulaText As String
+
+    Set targetCell = ThisWorkbook.Worksheets(sheetName) _
+        .ListObjects(tableName).ListColumns(columnName).DataBodyRange.Cells(1, 1)
+    If targetCell.Validation.Type <> xlValidateList Then
+        Err.Raise vbObjectError + 1203, "AssertValidationList", _
+            tableName & "." & columnName & " validation missing"
+    End If
+    formulaText = targetCell.Validation.Formula1
+    If InStr(1, formulaText, expectedItem, vbTextCompare) = 0 Then
+        Err.Raise vbObjectError + 1204, "AssertValidationList", _
+            tableName & "." & columnName & " validation item missing: " & expectedItem
+    End If
+End Sub
+
+Private Sub AssertCellFill(ByVal sheetName As String, ByVal tableName As String, _
+        ByVal columnName As String, ByVal expectedColor As Long)
+    Dim targetCell As Range
+
+    If Len(tableName) = 0 Then
+        Set targetCell = ThisWorkbook.Worksheets(sheetName).Range("A2")
+    Else
+        Set targetCell = ThisWorkbook.Worksheets(sheetName) _
+            .ListObjects(tableName).ListColumns(columnName).DataBodyRange.Cells(1, 1)
+    End If
+    AssertEqual targetCell.Interior.Color, expectedColor, _
+        sheetName & " " & columnName & " fill"
+End Sub
+
+Private Sub AssertWorkbookFont(ByVal expectedFont As String)
+    Dim worksheet As Worksheet
+
+    For Each worksheet In ThisWorkbook.Worksheets
+        AssertEqual worksheet.Cells.Font.Name, expectedFont, _
+            worksheet.Name & " default font"
+    Next worksheet
+End Sub
 
 Private Sub AssertEqual(ByVal actual As Variant, ByVal expected As Variant, ByVal message As String)
     If actual <> expected Then
