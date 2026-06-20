@@ -17,6 +17,7 @@ Public Function RunAllSelfTests(Optional ByVal fixturePath As String = "") As St
     Test_WorkbookReaders
     Test_ValidationRejectsBadInputs
     Test_ValidationReviewFindings
+    Test_ValidationQualityFindings
 
     RunAllSelfTests = ExpectedPassOutput()
     Exit Function
@@ -141,6 +142,53 @@ Public Sub Test_ValidationReviewFindings()
     AssertContains errors, "设备关系循环依赖", "device cycle error"
     AssertContains errors, "行", "device cycle row"
     AssertContains errors, "M1", "device cycle resource id"
+End Sub
+
+Public Sub Test_ValidationQualityFindings()
+    Dim errors As String
+    Dim startedAt As Single
+    Dim elapsedSec As Double
+
+    LoadValidationFixture "UNKNOWN_STEP_DEVICE"
+    errors = ValidateCurrentModel()
+    AssertContains errors, "设备不存在或未启用", "unknown step device"
+    AssertContains errors, "行", "unknown device row"
+
+    LoadValidationFixture "DISABLED_STEP_DEVICE"
+    errors = ValidateCurrentModel()
+    AssertContains errors, "设备不存在或未启用", "disabled step device"
+    AssertContains errors, "M3", "disabled device id"
+
+    LoadValidationFixture "STEP_CELL_ERROR"
+    errors = ValidateCurrentModel()
+    AssertContains errors, "单元格包含Excel错误值", "Excel error value"
+    AssertContains errors, "行", "Excel error row"
+
+    LoadValidationFixture "NORMALIZED_DUPLICATE"
+    errors = ValidateCurrentModel()
+    AssertContains errors, "步骤号重复", "normalized duplicate 1 and 01"
+
+    LoadValidationFixture "NORMALIZED_PREDECESSOR"
+    errors = ValidateCurrentModel()
+    AssertNotContains errors, "前置步骤不存在", "normalized predecessor match"
+
+    LoadValidationFixture "INVALID_RELATION_TYPE"
+    errors = ValidateCurrentModel()
+    AssertContains errors, "关系类型必须为独立循环或有先后顺序", _
+        "invalid relation type"
+    AssertContains errors, "M1", "invalid relation device id"
+
+    LoadValidationFixture "BLANK_RELATION_TYPE"
+    errors = ValidateCurrentModel()
+    AssertContains errors, "关系类型必须为独立循环或有先后顺序", _
+        "blank relation type"
+
+    LoadValidationFixture "MAX_200_STEPS"
+    startedAt = Timer
+    errors = ValidateCurrentModel()
+    elapsedSec = ElapsedSeconds(startedAt, Timer)
+    AssertEqual errors, "", "200 step boundary is valid"
+    AssertTrue elapsedSec < 5#, "200 step validation performance"
 End Sub
 
 Public Sub Test_WorkbookStructure()
@@ -528,7 +576,7 @@ Private Function ExpectedPassOutput() As String
         "Test_DomainConstants PASS; Test_DomainTypes PASS; " & _
         "Test_BaselineFixtureExpansion PASS; Test_WorkbookStructure PASS; " & _
         "Test_WorkbookReaders PASS; Test_ValidationRejectsBadInputs PASS; " & _
-        "Test_ValidationReviewFindings PASS"
+        "Test_ValidationReviewFindings PASS; Test_ValidationQualityFindings PASS"
 End Function
 
 Private Sub LoadValidationFixture(ByVal fixtureName As String)
@@ -591,10 +639,65 @@ Private Sub LoadValidationFixture(ByVal fixtureName As String)
         Case "INVALID_LOCKED_START"
             SetStepRow 1, "M1", 1, "上料", "人工", 5#, "", "通用", "P1", "稍后"
             SetStepRow 2, "M1", 2, "下料", "人工", 5#, "", "通用", "P1", -1#
+        Case "UNKNOWN_STEP_DEVICE"
+            SetStepRow 5, "MX", 1, "未知设备步骤", "人工", 5#, "", "通用"
+        Case "DISABLED_STEP_DEVICE"
+            SetStepRow 5, "M3", 1, "停用设备步骤", "人工", 5#, "", "通用"
+        Case "STEP_CELL_ERROR"
+            SetStepCellFormula 5, "设备", "=NA()"
+            SetStepCell 5, "步骤号", 1
+            SetStepCell 5, "名称", "错误设备步骤"
+            SetStepCell 5, "类型", "人工"
+            SetStepCell 5, "工时(s)", 5#
+        Case "NORMALIZED_DUPLICATE"
+            SetStepRow 1, "M1", 1, "上料", "人工", 5#, "", "通用"
+            SetStepRow 5, "M1", 1, "重复上料", "人工", 5#, "", "通用"
+            SetStepNumberText 5, "01"
+        Case "NORMALIZED_PREDECESSOR"
+            SetStepRow 1, "M1", 1, "上料", "人工", 5#, "", "通用"
+            SetStepRow 2, "M1", 2, "加工", "自动运行", 10#, "01", ""
+        Case "INVALID_RELATION_TYPE"
+            SetDeviceRelation "M1", "循环", ""
+        Case "BLANK_RELATION_TYPE"
+            SetDeviceRelation "M1", "", ""
+        Case "MAX_200_STEPS"
+            LoadMaximumModel
         Case Else
             Err.Raise vbObjectError + 1300, "LoadValidationFixture", _
                 "unknown validation fixture: " & fixtureName
     End Select
+End Sub
+
+Private Sub LoadMaximumModel()
+    Dim peopleTable As ListObject
+    Dim devicesTable As ListObject
+    Dim deviceIndex As Long
+    Dim stepIndex As Long
+    Dim rowIndex As Long
+    Dim allowedDevices As String
+
+    Set peopleTable = ThisWorkbook.Worksheets("基础设置").ListObjects("tblPeople")
+    Set devicesTable = ThisWorkbook.Worksheets("基础设置").ListObjects("tblDevices")
+    SetParameter "人员数量", 1
+    SetParameter "设备数量", MAX_DEVICES
+
+    For deviceIndex = 1 To MAX_DEVICES
+        If Len(allowedDevices) > 0 Then allowedDevices = allowedDevices & ","
+        allowedDevices = allowedDevices & "M" & CStr(deviceIndex)
+        SetTableRow devicesTable, deviceIndex, Array("M" & CStr(deviceIndex), _
+            "设备" & CStr(deviceIndex), "", "独立循环", "", "是")
+    Next deviceIndex
+    SetTableRow peopleTable, 1, Array("P1", "操作员1", "通用", allowedDevices, "是")
+
+    rowIndex = 0
+    For deviceIndex = 1 To MAX_DEVICES
+        For stepIndex = 1 To MAX_STEPS_PER_DEVICE
+            rowIndex = rowIndex + 1
+            SetStepRow rowIndex, "M" & CStr(deviceIndex), stepIndex, _
+                "步骤" & CStr(stepIndex), "自动运行", 1#, _
+                IIf(stepIndex = 1, "", stepIndex - 1), ""
+        Next stepIndex
+    Next deviceIndex
 End Sub
 
 Private Sub ResetValidationModel()
@@ -614,6 +717,8 @@ Private Sub ResetValidationModel()
 
     SetParameter "人员数量", 1
     SetParameter "设备数量", 2
+    SetParameter "计划分析循环数", 3
+    SetParameter "搜索迭代次数", 500
 
     SetTableRow peopleTable, 1, Array("P1", "操作员1", "通用", "M1,M2", "是")
     SetTableRow peopleTable, 2, Array("P2", "停用人员", "焊接", "M1", "否")
@@ -666,6 +771,26 @@ Private Sub SetStepRow(ByVal rowIndex As Long, ByVal deviceId As String, _
     SetTableRow table, rowIndex, values
 End Sub
 
+Private Sub SetStepCell(ByVal rowIndex As Long, ByVal columnName As String, _
+        ByVal value As Variant)
+    ThisWorkbook.Worksheets("作业步骤").ListObjects("tblSteps") _
+        .ListColumns(columnName).DataBodyRange.Cells(rowIndex, 1).Value2 = value
+End Sub
+
+Private Sub SetStepCellFormula(ByVal rowIndex As Long, ByVal columnName As String, _
+        ByVal formulaText As String)
+    ThisWorkbook.Worksheets("作业步骤").ListObjects("tblSteps") _
+        .ListColumns(columnName).DataBodyRange.Cells(rowIndex, 1).Formula = formulaText
+End Sub
+
+Private Sub SetStepNumberText(ByVal rowIndex As Long, ByVal value As String)
+    Dim targetCell As Range
+    Set targetCell = ThisWorkbook.Worksheets("作业步骤").ListObjects("tblSteps") _
+        .ListColumns("步骤号").DataBodyRange.Cells(rowIndex, 1)
+    targetCell.NumberFormat = "@"
+    targetCell.Value2 = value
+End Sub
+
 Private Sub SetMoveValue(ByVal fromDevice As String, ByVal toDevice As String, _
         ByVal value As Variant)
     Dim table As ListObject
@@ -712,6 +837,20 @@ Private Sub AssertNotContains(ByVal actual As String, ByVal unexpectedText As St
             message & ": unexpected text [" & unexpectedText & "], actual [" & actual & "]"
     End If
 End Sub
+
+Private Sub AssertTrue(ByVal condition As Boolean, ByVal message As String)
+    If Not condition Then
+        Err.Raise vbObjectError + 1004, "AssertTrue", message
+    End If
+End Sub
+
+Private Function ElapsedSeconds(ByVal startValue As Single, ByVal endValue As Single) As Double
+    If endValue >= startValue Then
+        ElapsedSeconds = endValue - startValue
+    Else
+        ElapsedSeconds = (86400# - startValue) + endValue
+    End If
+End Function
 
 Private Sub AssertSheetExists(ByVal sheetName As String)
     Dim worksheet As Worksheet

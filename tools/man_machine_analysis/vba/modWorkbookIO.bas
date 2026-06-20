@@ -100,6 +100,7 @@ Public Function ReadSteps() As Collection
     Dim stepItem As Object
     Dim rawDuration As Variant
     Dim rawLockedStart As Variant
+    Dim errorColumns As String
 
     Set enabledDevices = CreateObject("Scripting.Dictionary")
     enabledDevices.CompareMode = vbTextCompare
@@ -110,14 +111,17 @@ Public Function ReadSteps() As Collection
 
     Set table = ThisWorkbook.Worksheets("作业步骤").ListObjects("tblSteps")
     For rowIndex = 1 To table.ListRows.Count
-        deviceId = CellText(table, rowIndex, "设备")
-        If Len(deviceId) > 0 And enabledDevices.Exists(deviceId) Then
+        If IsStepRowActive(table, rowIndex) Then
+            deviceId = CellText(table, rowIndex, "设备")
             Set stepItem = CreateObject("Scripting.Dictionary")
             stepItem.CompareMode = vbTextCompare
             rawDuration = CellValue(table, rowIndex, "工时(s)")
             rawLockedStart = CellValue(table, rowIndex, "锁定开始(s)")
+            errorColumns = StepErrorColumns(table, rowIndex)
 
             stepItem("DeviceId") = deviceId
+            stepItem("DeviceIsEnabled") = enabledDevices.Exists(deviceId)
+            stepItem("ReadErrorColumns") = errorColumns
             stepItem("StepNoText") = CellText(table, rowIndex, "步骤号")
             stepItem("StepNo") = SafeLongOrZero(CellValue(table, rowIndex, "步骤号"))
             stepItem("StepName") = CellText(table, rowIndex, "名称")
@@ -175,6 +179,39 @@ Private Function FindTableColumn(ByVal table As ListObject, ByVal columnName As 
                 columnName, vbTextCompare) = 0 Then
             FindTableColumn = columnIndex
             Exit Function
+        End If
+    Next columnIndex
+End Function
+
+Private Function IsStepRowActive(ByVal table As ListObject, ByVal rowIndex As Long) As Boolean
+    Dim columnIndex As Long
+    Dim value As Variant
+
+    For columnIndex = 1 To table.ListColumns.Count
+        value = table.DataBodyRange.Cells(rowIndex, columnIndex).Value2
+        If IsError(value) Then
+            IsStepRowActive = True
+            Exit Function
+        End If
+        If Not IsEmpty(value) Then
+            If Len(Trim$(CStr(value))) > 0 Then
+                IsStepRowActive = True
+                Exit Function
+            End If
+        End If
+    Next columnIndex
+End Function
+
+Private Function StepErrorColumns(ByVal table As ListObject, ByVal rowIndex As Long) As String
+    Dim columnIndex As Long
+    Dim value As Variant
+
+    For columnIndex = 1 To table.ListColumns.Count
+        value = table.DataBodyRange.Cells(rowIndex, columnIndex).Value2
+        If IsError(value) Then
+            If Len(StepErrorColumns) > 0 Then StepErrorColumns = StepErrorColumns & "、"
+            StepErrorColumns = StepErrorColumns & _
+                CStr(table.HeaderRowRange.Cells(1, columnIndex).Value2)
         End If
     Next columnIndex
 End Function

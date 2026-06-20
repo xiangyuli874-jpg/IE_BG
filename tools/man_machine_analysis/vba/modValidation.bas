@@ -91,6 +91,7 @@ Private Sub ValidateSteps(ByRef errors As String, ByVal people As Collection, _
     Dim parsedStepNo As Long
     Dim lockedStart As Double
     Dim cycleKey As String
+    Dim enabledDeviceIds As Object
 
     Set stepByKey = CreateObject("Scripting.Dictionary")
     stepByKey.CompareMode = vbTextCompare
@@ -98,13 +99,30 @@ Private Sub ValidateSteps(ByRef errors As String, ByVal people As Collection, _
     seenKeys.CompareMode = vbTextCompare
     Set deviceHasStep = CreateObject("Scripting.Dictionary")
     deviceHasStep.CompareMode = vbTextCompare
+    Set enabledDeviceIds = CreateObject("Scripting.Dictionary")
+    enabledDeviceIds.CompareMode = vbTextCompare
+    For Each device In devices
+        enabledDeviceIds(device("DeviceId")) = True
+    Next device
 
     For Each stepItem In steps
-        key = StepKey(stepItem("DeviceId"), stepItem("StepNoText"))
-        deviceHasStep(stepItem("DeviceId")) = True
+        If Len(stepItem("ReadErrorColumns")) > 0 Then
+            AddStepError errors, stepItem, "单元格包含Excel错误值：" & _
+                stepItem("ReadErrorColumns") & "。"
+        End If
+        If Len(stepItem("DeviceId")) = 0 Or _
+                Not enabledDeviceIds.Exists(stepItem("DeviceId")) Then
+            AddStepError errors, stepItem, "设备不存在或未启用：" & _
+                DisplayOrBlank(stepItem("DeviceId")) & "。"
+        Else
+            deviceHasStep(stepItem("DeviceId")) = True
+        End If
 
-        If Not TryParsePositiveLong(stepItem("StepNoText"), parsedStepNo) Then
+        If TryParsePositiveLong(stepItem("StepNoText"), parsedStepNo) Then
+            key = StepKey(stepItem("DeviceId"), CStr(parsedStepNo))
+        Else
             AddStepError errors, stepItem, "步骤号必须为正整数。"
+            key = "__INVALID__|" & CStr(stepItem("SourceRow"))
         End If
 
         If seenKeys.Exists(key) Then
@@ -224,15 +242,22 @@ Private Sub ValidateDeviceRelations(ByRef errors As String, ByVal devices As Col
 
     For Each device In devices
         predecessorId = device("PredecessorDeviceId")
-        If StrComp(device("RelationType"), "有先后顺序", vbTextCompare) = 0 Then
-            graph(device("DeviceId")) = predecessorId
-            If Len(predecessorId) = 0 Or Not deviceById.Exists(predecessorId) Then
-                AddError errors, "[基础设置!tblDevices 行" & CStr(device("SourceRow")) & _
-                    "，设备 " & device("DeviceId") & "] 前置设备不存在。"
-            End If
-        Else
-            graph(device("DeviceId")) = ""
-        End If
+        Select Case device("RelationType")
+            Case "有先后顺序"
+                graph(device("DeviceId")) = predecessorId
+                If Len(predecessorId) = 0 Or Not deviceById.Exists(predecessorId) Then
+                    AddError errors, "[基础设置!tblDevices 行" & _
+                        CStr(device("SourceRow")) & "，设备 " & device("DeviceId") & _
+                        "] 前置设备不存在。"
+                End If
+            Case "独立循环"
+                graph(device("DeviceId")) = ""
+            Case Else
+                graph(device("DeviceId")) = ""
+                AddError errors, "[基础设置!tblDevices 行" & _
+                    CStr(device("SourceRow")) & "，设备 " & device("DeviceId") & _
+                    "] 关系类型必须为独立循环或有先后顺序。"
+        End Select
     Next device
 
     cycleDeviceId = FindStringGraphCycleNode(graph)
@@ -441,11 +466,12 @@ End Function
 Private Function ResolvePredecessorKey(ByVal stepItem As Object) As String
     Dim text As String
     Dim parts As Variant
+    Dim parsedStepNo As Long
 
     text = Trim$(stepItem("PredecessorText"))
     If Len(text) = 0 Then Exit Function
-    If IsNumeric(text) Then
-        ResolvePredecessorKey = StepKey(stepItem("DeviceId"), text)
+    If TryParsePositiveLong(text, parsedStepNo) Then
+        ResolvePredecessorKey = StepKey(stepItem("DeviceId"), CStr(parsedStepNo))
         Exit Function
     End If
 
@@ -453,7 +479,12 @@ Private Function ResolvePredecessorKey(ByVal stepItem As Object) As String
     text = Replace(text, "-", ":")
     parts = Split(text, ":")
     If UBound(parts) = 1 Then
-        ResolvePredecessorKey = StepKey(Trim$(CStr(parts(0))), Trim$(CStr(parts(1))))
+        If TryParsePositiveLong(Trim$(CStr(parts(1))), parsedStepNo) Then
+            ResolvePredecessorKey = StepKey(Trim$(CStr(parts(0))), CStr(parsedStepNo))
+        Else
+            ResolvePredecessorKey = StepKey(Trim$(CStr(parts(0))), _
+                Trim$(CStr(parts(1))))
+        End If
     Else
         ResolvePredecessorKey = StepKey(stepItem("DeviceId"), text)
     End If
@@ -470,6 +501,14 @@ End Function
 Private Function HasTextValue(ByVal value As Variant) As Boolean
     If IsError(value) Or IsEmpty(value) Then Exit Function
     HasTextValue = (Len(Trim$(CStr(value))) > 0)
+End Function
+
+Private Function DisplayOrBlank(ByVal value As String) As String
+    If Len(Trim$(value)) = 0 Then
+        DisplayOrBlank = "空白"
+    Else
+        DisplayOrBlank = value
+    End If
 End Function
 
 Private Function ParameterValue(ByVal parameters As ListObject, _
