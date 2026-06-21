@@ -1,6 +1,35 @@
 Attribute VB_Name = "modVisualization"
 Option Explicit
 
+Public Sub ClearVisualOutputs()
+    Dim sheet As Worksheet, table As ListObject
+
+    Set sheet = ThisWorkbook.Worksheets("自动排程")
+    On Error Resume Next
+    Set table = sheet.ListObjects("tblSchedule")
+    On Error GoTo 0
+    If Not table Is Nothing Then table.Delete
+    sheet.Range("A3:M1000").ClearContents
+    sheet.Range("AA1:BL1000").ClearContents
+
+    Set sheet = ThisWorkbook.Worksheets("人机作业图")
+    On Error Resume Next
+    sheet.ChartObjects("chtManMachine").Delete
+    On Error GoTo 0
+    sheet.Range("X4:AA1000").ClearContents
+    sheet.Range("A4:L1000").ClearContents
+    sheet.Range("A3:L3").Merge
+    sheet.Range("A3").Value2 = "尚未生成排程。请先到“自动排程”点击“生成初始方案”，或在“使用说明”载入示例。"
+    sheet.Range("A3:L3").Interior.Color = RGB(221, 235, 247)
+
+    Set sheet = ThisWorkbook.Worksheets("改善对比报告")
+    sheet.Range("A3:H30").UnMerge
+    sheet.Range("A3:H30").ClearContents
+    sheet.Range("A3:H3").Merge
+    sheet.Range("A3").Value2 = "尚无改善前后方案。请先保存改善前、优化排程、保存改善后，再刷新报告。"
+    sheet.Range("A3:E3").Interior.Color = RGB(221, 235, 247)
+End Sub
+
 Public Sub WriteScheduleOutput(ByVal schedule As Collection)
     Dim sheet As Worksheet, table As ListObject, target As Range
     Dim headers As Variant, task As Object, rowIndex As Long
@@ -55,8 +84,8 @@ Public Sub RefreshGanttView(Optional ByVal viewMode As String = "全部")
     If gCurrentSchedule Is Nothing Then Exit Sub
     Set schedule = gCurrentSchedule
 
-    sheet.Range("A4:D1000").ClearContents
-    sheet.Range("A4:D4").Value = Array("资源与任务", "开始偏移", "持续时间", "类型")
+    sheet.Range("X4:AA1000").ClearContents
+    sheet.Range("X4:AA4").Value = Array("资源与任务", "开始偏移", "持续时间", "类型")
     rowIndex = 5
     If viewMode = "全部" Or viewMode = "仅设备" Then
         For Each task In schedule
@@ -77,32 +106,55 @@ Public Sub RefreshGanttView(Optional ByVal viewMode As String = "全部")
     sheet.ChartObjects("chtManMachine").Delete
     On Error GoTo 0
     Set chartObject = sheet.ChartObjects.Add( _
-        sheet.Range("F4").Left, sheet.Range("F4").Top, 820, 480)
+        sheet.Range("B7").Left, sheet.Range("B7").Top, 1050, _
+        WorksheetFunction.Min(760, WorksheetFunction.Max(380, 180 + (rowIndex - 5) * 10)))
     chartObject.Name = "chtManMachine"
     Set chart = chartObject.Chart
     chart.ChartType = xlBarStacked
-    chart.SetSourceData sheet.Range("A4:C" & rowIndex - 1)
+    chart.SetSourceData sheet.Range("X4:Z" & rowIndex - 1)
+    chart.PlotVisibleOnly = False
     chart.HasTitle = True
-    chart.ChartTitle.Text = "人机作业时间轴（" & viewMode & "）"
+    chart.ChartTitle.Text = "人机作业时间轴（" & viewMode & "，单位：秒）"
     chart.HasLegend = False
     chart.SeriesCollection(1).Format.Fill.Visible = msoFalse
     chart.SeriesCollection(1).Format.Line.Visible = msoFalse
     For pointIndex = 1 To chart.SeriesCollection(2).Points.Count
         chart.SeriesCollection(2).Points(pointIndex).Format.Fill.ForeColor.RGB = _
-            StepTypeColor(CStr(sheet.Cells(pointIndex + 4, 4).Value2))
+            StepTypeColor(CStr(sheet.Cells(pointIndex + 4, 27).Value2))
     Next pointIndex
     chart.Axes(xlCategory).ReversePlotOrder = True
-    sheet.Columns("A").ColumnWidth = 36
-    sheet.Columns("B:D").ColumnWidth = 12
+    sheet.Columns("X:AA").Hidden = True
+    sheet.Range("A3:L3").Merge
+    sheet.Range("A3").Value2 = "当前视图：" & viewMode & "；横轴单位：秒。"
+    WriteGanttLegend sheet
 End Sub
 
 Private Sub WriteGanttRow(ByVal sheet As Worksheet, ByRef rowIndex As Long, _
         ByVal labelText As String, ByVal task As Object)
-    sheet.Cells(rowIndex, 1).Value2 = labelText
-    sheet.Cells(rowIndex, 2).Value2 = task("StartSec")
-    sheet.Cells(rowIndex, 3).Value2 = task("DurationSec")
-    sheet.Cells(rowIndex, 4).Value2 = task("StepType")
+    sheet.Cells(rowIndex, 24).Value2 = labelText
+    sheet.Cells(rowIndex, 25).Value2 = task("StartSec")
+    sheet.Cells(rowIndex, 26).Value2 = task("DurationSec")
+    sheet.Cells(rowIndex, 27).Value2 = task("StepType")
     rowIndex = rowIndex + 1
+End Sub
+
+Private Sub WriteGanttLegend(ByVal sheet As Worksheet)
+    Dim labels As Variant, colors As Variant, index As Long
+    labels = Array("人工", "自动运行", "人机协同", "等待", "移动")
+    colors = Array(RGB(68, 114, 196), RGB(112, 173, 71), RGB(237, 125, 49), _
+        RGB(192, 0, 0), RGB(112, 48, 160))
+    sheet.Range("B4:K5").ClearContents
+    For index = 0 To UBound(labels)
+        sheet.Cells(4, 2 + index * 2).Interior.Color = colors(index)
+        sheet.Cells(4, 3 + index * 2).Value2 = labels(index)
+        sheet.Cells(4, 3 + index * 2).Font.Bold = True
+    Next index
+    If Not gCurrentMetrics Is Nothing Then
+        sheet.Range("B5:K5").Merge
+        sheet.Range("B5").Value2 = "稳定循环周期：" & _
+            Format$(CDbl(gCurrentMetrics("CycleTimeSec")), "0.0") & _
+            "秒；平均节拍：" & Format$(CDbl(gCurrentMetrics("TaktSec")), "0.00") & "秒/件"
+    End If
 End Sub
 
 Public Sub RefreshComparisonReport()
@@ -111,8 +163,8 @@ Public Sub RefreshComparisonReport()
     Dim labels As Variant, keys As Variant, rowIndex As Long
     Dim beforeValue As Double, afterValue As Double
     Set sheet = ThisWorkbook.Worksheets("改善对比报告")
-    sheet.Range("A3:F30").ClearContents
-    sheet.Range("A3:E3").Value = Array("指标", "改善前", "改善后", "差值", "改善率")
+    sheet.Range("A3:H30").UnMerge
+    sheet.Range("A3:H30").ClearContents
     labels = Array("循环周期(s)", "平均节拍(s/件)", "小时产能(pcs/h)", _
         "平均人员负荷率", "最大人员负荷率", "设备等待人员(s)", "总移动时间(s)")
     keys = Array("CycleTimeSec", "TaktSec", "HourlyCapacity", "AveragePersonLoad", _
@@ -128,26 +180,77 @@ Public Sub RefreshComparisonReport()
     If beforeSchedule Is Nothing Or afterSchedule Is Nothing Then Exit Sub
     Set beforeMetrics = CalculateMetrics(beforeSchedule)
     Set afterMetrics = CalculateMetrics(afterSchedule)
+    sheet.Range("A3:B3").Merge
+    sheet.Range("C3:D3").Merge
+    sheet.Range("E3:F3").Merge
+    sheet.Range("G3:H3").Merge
+    sheet.Range("A4:B4").Merge
+    sheet.Range("C4:D4").Merge
+    sheet.Range("E4:F4").Merge
+    sheet.Range("G4:H4").Merge
+    sheet.Range("A3").Value2 = "改善前周期(s)"
+    sheet.Range("C3").Value2 = "改善后周期(s)"
+    sheet.Range("E3").Value2 = "改善前产能(pcs/h)"
+    sheet.Range("G3").Value2 = "改善后产能(pcs/h)"
+    sheet.Range("A4").Value2 = beforeMetrics("CycleTimeSec")
+    sheet.Range("C4").Value2 = afterMetrics("CycleTimeSec")
+    sheet.Range("E4").Value2 = beforeMetrics("HourlyCapacity")
+    sheet.Range("G4").Value2 = afterMetrics("HourlyCapacity")
+    sheet.Range("A3:H3").Interior.Color = RGB(31, 78, 121)
+    sheet.Range("A3:H3").Font.Color = vbWhite
+    sheet.Range("A3:H4").Font.Bold = True
+    sheet.Range("A3:H4").HorizontalAlignment = xlCenter
+    sheet.Range("A3:H4").Borders.LineStyle = xlContinuous
+    sheet.Range("A4:H4").NumberFormat = "0.00"
+    sheet.Range("A7:E7").Value = Array("指标", "改善前", "改善后", "差值", "改善率")
     For rowIndex = 0 To UBound(labels)
         beforeValue = CDbl(beforeMetrics(keys(rowIndex)))
         afterValue = CDbl(afterMetrics(keys(rowIndex)))
-        sheet.Cells(rowIndex + 4, 1).Value2 = labels(rowIndex)
-        sheet.Cells(rowIndex + 4, 2).Value2 = beforeValue
-        sheet.Cells(rowIndex + 4, 3).Value2 = afterValue
-        sheet.Cells(rowIndex + 4, 4).Value2 = afterValue - beforeValue
+        sheet.Cells(rowIndex + 8, 1).Value2 = labels(rowIndex)
+        sheet.Cells(rowIndex + 8, 2).Value2 = beforeValue
+        sheet.Cells(rowIndex + 8, 3).Value2 = afterValue
+        sheet.Cells(rowIndex + 8, 4).Value2 = afterValue - beforeValue
         If Abs(beforeValue) > 0.000001 Then
-            sheet.Cells(rowIndex + 4, 5).Value2 = (afterValue - beforeValue) / beforeValue
+            sheet.Cells(rowIndex + 8, 5).Value2 = (afterValue - beforeValue) / beforeValue
         End If
     Next rowIndex
-    sheet.Range("E4:E10").NumberFormat = "0.0%"
-    sheet.Range("B4:D10").NumberFormat = "0.00"
-    sheet.Cells(12, 1).Value2 = "改善建议"
-    sheet.Cells(12, 1).Font.Bold = True
-    sheet.Cells(13, 1).Value2 = ImprovementAdvice(afterMetrics)
-    sheet.Range("A13:E16").Merge
-    sheet.Range("A13:E16").WrapText = True
+    sheet.Range("E8:E14").NumberFormat = "0.0%"
+    sheet.Range("B8:D14").NumberFormat = "0.00"
+    sheet.Cells(16, 1).Value2 = "改善建议"
+    sheet.Cells(16, 1).Font.Bold = True
+    sheet.Cells(17, 1).Value2 = ImprovementAdvice(afterMetrics)
+    sheet.Range("A17:H21").Merge
+    sheet.Range("A17:H21").WrapText = True
+    FormatImprovementRates sheet
     sheet.Columns("A").ColumnWidth = 24
-    sheet.Columns("B:E").ColumnWidth = 16
+    sheet.Columns("B:H").ColumnWidth = 16
+End Sub
+
+Private Sub FormatImprovementRates(ByVal sheet As Worksheet)
+    Dim rowIndex As Long, rateValue As Variant, isGood As Boolean
+    sheet.Range("A7:E14").Borders.LineStyle = xlContinuous
+    sheet.Range("A7:E7").Interior.Color = RGB(31, 78, 121)
+    sheet.Range("A7:E7").Font.Color = vbWhite
+    sheet.Range("A7:E7").Font.Bold = True
+    For rowIndex = 8 To 14
+        rateValue = sheet.Cells(rowIndex, 5).Value2
+        If IsNumeric(rateValue) Then
+            If rowIndex = 10 Then
+                isGood = (CDbl(rateValue) > 0)
+            Else
+                isGood = (CDbl(rateValue) < 0)
+            End If
+            If Abs(CDbl(rateValue)) < 0.000001 Then
+                sheet.Cells(rowIndex, 5).Interior.Color = RGB(242, 242, 242)
+            ElseIf isGood Then
+                sheet.Cells(rowIndex, 5).Interior.Color = RGB(198, 239, 206)
+                sheet.Cells(rowIndex, 5).Font.Color = RGB(0, 97, 0)
+            Else
+                sheet.Cells(rowIndex, 5).Interior.Color = RGB(255, 199, 206)
+                sheet.Cells(rowIndex, 5).Font.Color = RGB(156, 0, 6)
+            End If
+        End If
+    Next rowIndex
 End Sub
 
 Public Sub WriteMetricCards(ByVal metrics As Object)

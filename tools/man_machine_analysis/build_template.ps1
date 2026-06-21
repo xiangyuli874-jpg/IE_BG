@@ -9,10 +9,10 @@ $toolRoot = $PSScriptRoot
 $repoRoot = Split-Path (Split-Path $toolRoot -Parent) -Parent
 $vbaRoot = Join-Path $toolRoot 'vba'
 $tempRoot = Join-Path $repoRoot '.codex_tmp\man_machine_analysis'
-$outputRoot = Join-Path $repoRoot 'outputs\man_machine_analysis'
-$finalWorkbook = Join-Path $outputRoot '人机作业分析自动排程模板_v1.xlsm'
-$buildingWorkbook = Join-Path $tempRoot '人机作业分析自动排程模板_v1.building.xlsm'
-$expectedResult = 'Test_ChineseSourceRoundTrip PASS; Test_DomainConstants PASS; Test_DomainTypes PASS; Test_BaselineFixtureExpansion PASS; Test_WorkbookStructure PASS; Test_WorkbookReaders PASS; Test_ValidationRejectsBadInputs PASS; Test_ValidationReviewFindings PASS; Test_ValidationQualityFindings PASS; Test_SchedulingCore PASS; Test_LocksAndSnapshots PASS; Test_VisualizationOutputs PASS'
+$outputRoot = Join-Path $repoRoot 'outputs\人机作业分析表'
+$finalWorkbook = Join-Path $outputRoot '人机作业分析自动排程模板_v2.xlsm'
+$buildingWorkbook = Join-Path $tempRoot '人机作业分析自动排程模板_v2.building.xlsm'
+$expectedResult = 'Test_ChineseSourceRoundTrip PASS; Test_DomainConstants PASS; Test_DomainTypes PASS; Test_BaselineFixtureExpansion PASS; Test_WorkbookStructure PASS; Test_WorkbookReaders PASS; Test_ValidationRejectsBadInputs PASS; Test_ValidationReviewFindings PASS; Test_ValidationQualityFindings PASS; Test_SchedulingCore PASS; Test_LocksAndSnapshots PASS; Test_VisualizationOutputs PASS; Test_BlankAndExampleWorkflow PASS'
 $MAX_PEOPLE = 5
 $MAX_DEVICES = 10
 $MAX_STEPS_PER_DEVICE = 20
@@ -46,31 +46,21 @@ function Set-RangeValues {
         [object[]]$Rows
     )
 
-    $rowCount = $Rows.Count
-    $columnCount = $Rows[0].Count
-    $values = New-Object 'object[,]' $rowCount, $columnCount
-    for ($rowIndex = 0; $rowIndex -lt $rowCount; $rowIndex++) {
-        for ($columnIndex = 0; $columnIndex -lt $columnCount; $columnIndex++) {
-            $values[$rowIndex, $columnIndex] = $Rows[$rowIndex][$columnIndex]
+    for ($rowIndex = 0; $rowIndex -lt $Rows.Count; $rowIndex++) {
+        $rowValues = [object[]]$Rows[$rowIndex]
+        for ($columnIndex = 0; $columnIndex -lt $rowValues.Count; $columnIndex++) {
+            $cell = $null
+            try {
+                $cell = $Worksheet.Cells.Item(
+                    $StartRow + $rowIndex,
+                    $StartColumn + $columnIndex
+                )
+                $cell.Value2 = [string]$rowValues[$columnIndex]
+            }
+            finally {
+                Release-ComObject $cell
+            }
         }
-    }
-
-    $startCell = $null
-    $endCell = $null
-    $targetRange = $null
-    try {
-        $startCell = $Worksheet.Cells.Item($StartRow, $StartColumn)
-        $endCell = $Worksheet.Cells.Item(
-            $StartRow + $rowCount - 1,
-            $StartColumn + $columnCount - 1
-        )
-        $targetRange = $Worksheet.Range($startCell, $endCell)
-        $targetRange.Value2 = $values
-    }
-    finally {
-        Release-ComObject $targetRange
-        Release-ComObject $endCell
-        Release-ComObject $startCell
     }
 }
 
@@ -289,11 +279,11 @@ function Initialize-WorkbookStructure {
         [object]$Book
     )
 
-    $sheetNames = @('基础设置', '作业步骤', '自动排程', '人机作业图', '改善对比报告')
+    $sheetNames = @('使用说明', '基础设置', '作业步骤', '自动排程', '人机作业图', '改善对比报告')
     $worksheets = $null
     try {
         $worksheets = $Book.Worksheets
-        while ($worksheets.Count -lt 5) {
+        while ($worksheets.Count -lt 6) {
             $newSheet = $null
             try {
                 $newSheet = $worksheets.Add()
@@ -302,7 +292,7 @@ function Initialize-WorkbookStructure {
                 Release-ComObject $newSheet
             }
         }
-        while ($worksheets.Count -gt 5) {
+        while ($worksheets.Count -gt 6) {
             $extraSheet = $null
             try {
                 $extraSheet = $worksheets.Item($worksheets.Count)
@@ -313,7 +303,7 @@ function Initialize-WorkbookStructure {
             }
         }
 
-        for ($sheetIndex = 1; $sheetIndex -le 5; $sheetIndex++) {
+        for ($sheetIndex = 1; $sheetIndex -le 6; $sheetIndex++) {
             $worksheet = $null
             $allCells = $null
             try {
@@ -332,22 +322,30 @@ function Initialize-WorkbookStructure {
         }
 
         $settings = $null
+        $instructions = $null
         $steps = $null
         $schedule = $null
         $gantt = $null
         $report = $null
         try {
+            $instructions = $worksheets.Item('使用说明')
             $settings = $worksheets.Item('基础设置')
             $steps = $worksheets.Item('作业步骤')
             $schedule = $worksheets.Item('自动排程')
             $gantt = $worksheets.Item('人机作业图')
             $report = $worksheets.Item('改善对比报告')
 
+            Build-InstructionsSheet -Worksheet $instructions
             Build-SettingsSheet -Book $Book -Worksheet $settings
             Build-StepsSheet -Worksheet $steps
             Build-OutputSheet -Worksheet $schedule -Title '自动排程'
             Build-OutputSheet -Worksheet $gantt -Title '人机作业图'
             Build-OutputSheet -Worksheet $report -Title '改善对比报告'
+            Add-CommandButton -Worksheet $instructions -CellAddress 'A5' -Caption '新建空白分析' -MacroName 'CmdNewBlankAnalysis' -Width 110
+            Add-CommandButton -Worksheet $instructions -CellAddress 'C5' -Caption '载入1人3机示例并试算' -MacroName 'CmdLoadExampleAndRun' -Width 155
+            Add-CommandButton -Worksheet $instructions -CellAddress 'F5' -Caption '前往基础设置' -MacroName 'CmdGoSettings' -Width 100
+            Add-CommandButton -Worksheet $instructions -CellAddress 'H5' -Caption '前往作业步骤' -MacroName 'CmdGoSteps' -Width 100
+            Add-CommandButton -Worksheet $instructions -CellAddress 'J5' -Caption '前往自动排程' -MacroName 'CmdGoSchedule' -Width 100
             Add-CommandButton -Worksheet $schedule -CellAddress 'A2' -Caption '检查数据' -MacroName 'CmdCheckData'
             Add-CommandButton -Worksheet $schedule -CellAddress 'B2' -Caption '生成初始方案' -MacroName 'CmdBuildInitial' -Width 96
             Add-CommandButton -Worksheet $schedule -CellAddress 'C2' -Caption '优化排程' -MacroName 'CmdOptimize'
@@ -361,11 +359,29 @@ function Initialize-WorkbookStructure {
             Add-CommandButton -Worksheet $gantt -CellAddress 'C2' -Caption '仅设备' -MacroName 'CmdViewDevices'
             Add-CommandButton -Worksheet $report -CellAddress 'A2' -Caption '刷新报告' -MacroName 'CmdRefreshReport'
 
+            Format-ScheduleSheet -Worksheet $schedule
+            Format-GanttSheet -Worksheet $gantt
+            Format-ReportSheet -Worksheet $report
+
+            Set-FreezePane -Excel $Excel -Worksheet $instructions -CellAddress 'A7'
             Set-FreezePane -Excel $Excel -Worksheet $settings -CellAddress 'A4'
             Set-FreezePane -Excel $Excel -Worksheet $steps -CellAddress 'A5'
             Set-FreezePane -Excel $Excel -Worksheet $schedule -CellAddress 'A4'
             Set-FreezePane -Excel $Excel -Worksheet $gantt -CellAddress 'A4'
             Set-FreezePane -Excel $Excel -Worksheet $report -CellAddress 'A4'
+            $instructions.Activate()
+            $Excel.ActiveWindow.DisplayGridlines = $false
+            $settings.Activate()
+            $Excel.ActiveWindow.DisplayGridlines = $false
+            $steps.Activate()
+            $Excel.ActiveWindow.DisplayGridlines = $false
+            $schedule.Activate()
+            $Excel.ActiveWindow.DisplayGridlines = $false
+            $gantt.Activate()
+            $Excel.ActiveWindow.DisplayGridlines = $false
+            $report.Activate()
+            $Excel.ActiveWindow.DisplayGridlines = $false
+            $instructions.Activate()
         }
         finally {
             Release-ComObject $report
@@ -373,11 +389,144 @@ function Initialize-WorkbookStructure {
             Release-ComObject $schedule
             Release-ComObject $steps
             Release-ComObject $settings
+            Release-ComObject $instructions
         }
     }
     finally {
         Release-ComObject $worksheets
     }
+}
+
+function Build-InstructionsSheet {
+    param([object]$Worksheet)
+
+    Set-SheetTitle -Worksheet $Worksheet -Address 'A1:L1' -Text '人机作业分析｜使用说明'
+    $intro = $Worksheet.Range('A2:L3')
+    [void]$intro.Merge()
+    $intro.Value2 = '用于分析多人员、多设备的人工操作、设备自动运行、移动与等待，并自动生成排程、时间轴和改善对比。支持最多5人、10台设备、每台20步。'
+    $intro.WrapText = $true
+    $intro.Font.Size = 11
+    $intro.Interior.Color = $optionalColor
+    $intro.VerticalAlignment = -4108
+    $intro.RowHeight = 24
+    Release-ComObject $intro
+
+    Set-SectionTitle -Worksheet $Worksheet -Address 'A7:L7' -Text '推荐操作流程'
+    $Worksheet.Range('A8:L9').Merge()
+    $Worksheet.Range('A8').Value2 = '① 新建空白分析　→　② 填写基础设置　→　③ 填写作业步骤　→　④ 检查数据　→　⑤ 生成初始方案/优化排程　→　⑥ 查看人机作业图与改善报告'
+    $Worksheet.Range('A8:L9').WrapText = $true
+    $Worksheet.Range('A8:L9').Font.Bold = $true
+    $Worksheet.Range('A8:L9').HorizontalAlignment = -4108
+    $Worksheet.Range('A8:L9').VerticalAlignment = -4108
+
+    Set-SectionTitle -Worksheet $Worksheet -Address 'A11:F11' -Text '工作表说明'
+    Set-SectionTitle -Worksheet $Worksheet -Address 'G11:L11' -Text '填写规则与颜色'
+    $sheetDescriptions = @(
+        [pscustomobject]@{ Label = '基础设置'; Detail = '设置人数、设备、技能、生产关系、移动时间和优化目标' }
+        [pscustomobject]@{ Label = '作业步骤'; Detail = '集中填写各设备的步骤、类型、工时、技能及锁定条件' }
+        [pscustomobject]@{ Label = '自动排程'; Detail = '检查数据、生成/优化、锁定任务、保存改善前后方案' }
+        [pscustomobject]@{ Label = '人机作业图'; Detail = '按全部、仅人员或仅设备查看甘特时间轴' }
+        [pscustomobject]@{ Label = '改善对比报告'; Detail = '比较循环周期、节拍、产能、负荷、等待与移动' }
+    )
+    $ruleDescriptions = @(
+        [pscustomobject]@{ Label = '黄色'; Detail = '必填输入' }
+        [pscustomobject]@{ Label = '浅蓝'; Detail = '选填输入或约束' }
+        [pscustomobject]@{ Label = '灰色'; Detail = '自动计算/输出，请勿覆盖' }
+        [pscustomobject]@{ Label = '人工'; Detail = '占用人员；设备自动运行不占用人员' }
+        [pscustomobject]@{ Label = '人机协同'; Detail = '同一时段同时占用人员和设备' }
+    )
+    for ($index = 0; $index -lt $sheetDescriptions.Count; $index++) {
+        $Worksheet.Cells.Item(12 + $index, 1).Value2 = $sheetDescriptions[$index].Label
+        $Worksheet.Cells.Item(12 + $index, 2).Value2 = $sheetDescriptions[$index].Detail
+        $Worksheet.Cells.Item(12 + $index, 7).Value2 = $ruleDescriptions[$index].Label
+        $Worksheet.Cells.Item(12 + $index, 8).Value2 = $ruleDescriptions[$index].Detail
+    }
+    $Worksheet.Range('B12:F16').MergeCells = $false
+    $Worksheet.Range('H12:L16').MergeCells = $false
+    $Worksheet.Range('B12:F16').WrapText = $true
+    $Worksheet.Range('H12:L16').WrapText = $true
+    $Worksheet.Range('G12:G12').Interior.Color = $requiredColor
+    $Worksheet.Range('G13:G13').Interior.Color = $optionalColor
+    $Worksheet.Range('G14:G14').Interior.Color = $outputColor
+
+    Set-SectionTitle -Worksheet $Worksheet -Address 'A19:F19' -Text '锁定、撤回与改善方案'
+    Set-SectionTitle -Worksheet $Worksheet -Address 'G19:L19' -Text '常见问题'
+    $Worksheet.Range('A20:F25').Merge()
+    $Worksheet.Range('A20').Value2 = '• 在自动排程明细中选择任务行，点击[锁定/解锁]。' + [Environment]::NewLine +
+        '• 重新优化时，锁定任务的人员和开始时间保持不变。' + [Environment]::NewLine +
+        '• [撤回]恢复上一个方案；[保存改善前/后]用于对比报告。'
+    $Worksheet.Range('A20:F25').WrapText = $true
+    $Worksheet.Range('G20:L25').Merge()
+    $Worksheet.Range('G20').Value2 = '• 无法排程：先点[检查数据]，按提示修正行号。' + [Environment]::NewLine +
+        '• 下拉没有内容：请先填写并启用人员、设备。' + [Environment]::NewLine +
+        '• 图表为空：需要先生成或优化排程。' + [Environment]::NewLine +
+        '• 宏按钮不可用：重新打开文件并选择[启用内容]。'
+    $Worksheet.Range('G20:L25').WrapText = $true
+
+    Set-SectionTitle -Worksheet $Worksheet -Address 'A27:L27' -Text '案例参考'
+    $Worksheet.Range('A28').Value2 = '问题案例'
+    [void]$Worksheet.Hyperlinks.Add(
+        $Worksheet.Range('B28'),
+        'https://www.bilibili.com/video/BV1CtVM6AEaC/',
+        '',
+        '打开问题案例视频',
+        'https://www.bilibili.com/video/BV1CtVM6AEaC/'
+    )
+    $Worksheet.Range('A29').Value2 = '解答方法'
+    [void]$Worksheet.Hyperlinks.Add(
+        $Worksheet.Range('B29'),
+        'https://www.bilibili.com/video/BV19xVE65EZL/',
+        '',
+        '打开解答方法视频',
+        'https://www.bilibili.com/video/BV19xVE65EZL/'
+    )
+    $Worksheet.Range('A30').Value2 = '软件功能参考'
+    [void]$Worksheet.Hyperlinks.Add(
+        $Worksheet.Range('B30'),
+        'https://www.bilibili.com/video/BV1Sb7r6LEq6/',
+        '',
+        '打开软件功能参考视频',
+        'https://www.bilibili.com/video/BV1Sb7r6LEq6/'
+    )
+    $Worksheet.Columns.Item('A').ColumnWidth = 18
+    $Worksheet.Columns.Item('B:F').ColumnWidth = 15
+    $Worksheet.Columns.Item('G').ColumnWidth = 16
+    $Worksheet.Columns.Item('H:L').ColumnWidth = 15
+    $Worksheet.Rows.Item('20:25').RowHeight = 22
+}
+
+function Format-ScheduleSheet {
+    param([object]$Worksheet)
+    $Worksheet.Range('A2:L2').ClearContents()
+    $Worksheet.Rows.Item(2).RowHeight = 28
+    $Worksheet.Range('A3:H3').Interior.Color = 14277081
+    $Worksheet.Range('A3:H3').Font.Bold = $true
+    $Worksheet.Range('A3:H3').HorizontalAlignment = -4108
+    $Worksheet.Range('A4:H4').Font.Size = 12
+    $Worksheet.Range('A4:H4').Font.Bold = $true
+    $Worksheet.Range('A4:H4').HorizontalAlignment = -4108
+    $Worksheet.Range('A3:H4').Borders.LineStyle = 1
+    $Worksheet.Columns.Item('A:H').ColumnWidth = 17
+    $Worksheet.Columns.Item('E:F').ColumnWidth = 19
+    $Worksheet.Range('A6:M6').RowHeight = 36
+}
+
+function Format-GanttSheet {
+    param([object]$Worksheet)
+    $Worksheet.Range('A2:L2').ClearContents()
+    $Worksheet.Rows.Item(2).RowHeight = 28
+    $Worksheet.Range('A3:L3').Merge()
+    $Worksheet.Range('A3').Value2 = '请先生成排程。图中：人工=蓝色、自动运行=绿色、人机协同=橙色、等待=红色、移动=紫色。'
+    $Worksheet.Range('A3:L3').Interior.Color = $optionalColor
+    $Worksheet.Range('A3:L3').WrapText = $true
+}
+
+function Format-ReportSheet {
+    param([object]$Worksheet)
+    $Worksheet.Range('A2:L2').ClearContents()
+    $Worksheet.Rows.Item(2).RowHeight = 28
+    $Worksheet.Columns.Item('A').ColumnWidth = 25
+    $Worksheet.Columns.Item('B:H').ColumnWidth = 16
 }
 
 function Build-SettingsSheet {
@@ -425,15 +574,12 @@ function Build-SettingsSheet {
             -DataRowCount $MAX_DEVICES
 
         Set-RangeValues -Worksheet $Worksheet -StartRow 5 -StartColumn 1 -Rows @(
-            ,([object[]]@('当前方案', 1, 3, 3, '综合优化', 500, 0.4, 0.2, 0.3, 0.1))
-        )
-        Set-RangeValues -Worksheet $Worksheet -StartRow $resourceDataRow -StartColumn 1 -Rows @(
-            ,([object[]]@('P1', '操作员1', '通用', 'M1,M2,M3', '是'))
+            ,([object[]]@('新分析', '', '', 3, '综合优化', 500, 0.4, 0.2, 0.3, 0.1))
         )
         $deviceDefaults = @()
         for ($deviceIndex = 1; $deviceIndex -le $MAX_DEVICES; $deviceIndex++) {
             $deviceDefaults += ,([object[]]@(
-                "M$deviceIndex", "设备$deviceIndex", '', '独立循环', '', $(if ($deviceIndex -le 3) { '是' } else { '否' })
+                '', '', '', '', '', ''
             ))
         }
         Set-RangeValues -Worksheet $Worksheet -StartRow $resourceDataRow `
@@ -449,12 +595,6 @@ function Build-SettingsSheet {
         }
         Set-RangeValues -Worksheet $Worksheet -StartRow $moveDataRow `
             -StartColumn 1 -Rows $moveDefaults
-        $sourceRow = $moveDataRow + $MAX_DEVICES + 2
-        $Worksheet.Cells.Item($sourceRow, 1).Value2 = '案例参考'
-        $Worksheet.Cells.Item($sourceRow, 1).Font.Bold = $true
-        $Worksheet.Cells.Item($sourceRow + 1, 1).Value2 = 'https://www.bilibili.com/video/BV1CtVM6AEaC/'
-        $Worksheet.Cells.Item($sourceRow + 2, 1).Value2 = 'https://www.bilibili.com/video/BV19xVE65EZL/'
-        $Worksheet.Cells.Item($sourceRow + 3, 1).Value2 = 'https://www.bilibili.com/video/BV1Sb7r6LEq6/'
 
         Set-ColumnFill -Table $parameters -ColumnNames @(
             '人员数量', '设备数量', '计划分析循环数', '优化目标', '搜索迭代次数',
@@ -535,7 +675,7 @@ function Build-StepsSheet {
     try {
         $instruction = $Worksheet.Range('A2:K2')
         [void]$instruction.Merge()
-        $instruction.Value2 = '每台设备最多 20 步；黄色为必填，浅蓝为选填。内置案例预期：56秒完成3件，平均18.67秒/件。'
+        $instruction.Value2 = '每台设备最多20步；黄色为必填，浅蓝为选填。需要体验时，请在“使用说明”点击“载入1人3机示例并试算”。'
         $instruction.Interior.Color = $optionalColor
         $instruction.Font.Color = 8210719
     }
@@ -692,6 +832,7 @@ try {
     if ($null -eq $result -or [string]$result -cne $expectedResult) {
         throw "Unexpected self-test result. Expected [$expectedResult], actual [$result]"
     }
+    $excel.Run("'$($book.Name)'!ResetToBlankState")
     $book.Save()
 
 }

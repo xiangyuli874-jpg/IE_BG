@@ -21,6 +21,7 @@ Public Function RunAllSelfTests(Optional ByVal fixturePath As String = "") As St
     Test_SchedulingCore
     Test_LocksAndSnapshots
     Test_VisualizationOutputs
+    Test_BlankAndExampleWorkflow
 
     RunAllSelfTests = ExpectedPassOutput()
     Exit Function
@@ -233,7 +234,7 @@ Public Sub Test_VisualizationOutputs()
     CmdOptimize
     CmdSaveAfter
     CmdRefreshReport
-    AssertTrue IsNumeric(ThisWorkbook.Worksheets("改善对比报告").Range("B4").Value2), _
+    AssertTrue IsNumeric(ThisWorkbook.Worksheets("改善对比报告").Range("A4").Value2), _
         "comparison metric is numeric"
 End Sub
 
@@ -266,13 +267,13 @@ Public Sub Test_WorkbookStructure()
     Dim visibleCount As Long
     Dim worksheet As Worksheet
 
-    expectedSheets = Array("基础设置", "作业步骤", "自动排程", _
+    expectedSheets = Array("使用说明", "基础设置", "作业步骤", "自动排程", _
         "人机作业图", "改善对比报告")
 
     For Each worksheet In ThisWorkbook.Worksheets
         If worksheet.Visible = xlSheetVisible Then visibleCount = visibleCount + 1
     Next worksheet
-    AssertEqual visibleCount, 5, "visible worksheet count"
+    AssertEqual visibleCount, 6, "visible worksheet count"
 
     For Each sheetName In expectedSheets
         AssertSheetExists CStr(sheetName)
@@ -343,14 +344,52 @@ Public Sub Test_WorkbookStructure()
     AssertTableCapacity "作业步骤", "tblSteps", _
         MAX_DEVICES * MAX_STEPS_PER_DEVICE
 
-    AssertCellValue "基础设置", "tblParameters", "人员数量", 1
-    AssertCellValue "基础设置", "tblParameters", "设备数量", 3
+    AssertCellValue "基础设置", "tblParameters", "人员数量", ""
+    AssertCellValue "基础设置", "tblParameters", "设备数量", ""
     AssertCellFill "基础设置", "tblParameters", "人员数量", RGB(255, 242, 204)
     AssertCellFill "基础设置", "tblParameters", "设备数量", RGB(255, 242, 204)
     AssertCellFill "基础设置", "tblParameters", "计划分析循环数", RGB(255, 242, 204)
     AssertCellFill "基础设置", "tblPeople", "人员名称", RGB(221, 235, 247)
     AssertCellFill "自动排程", "", "", RGB(242, 242, 242)
     AssertWorkbookFont "微软雅黑"
+End Sub
+
+Public Sub Test_BlankAndExampleWorkflow()
+    Dim chartObject As ChartObject
+    Dim scheduleTable As ListObject
+
+    ResetToBlankState
+    AssertEqual ReadPeople().Count, 0, "blank people"
+    AssertEqual ReadDevices().Count, 0, "blank devices"
+    AssertEqual ReadSteps().Count, 0, "blank steps"
+    AssertEqual ThisWorkbook.Worksheets("基础设置").ListObjects("tblParameters") _
+        .ListColumns("计划分析循环数").DataBodyRange.Cells(1, 1).Value2, 3, _
+        "blank keeps cycle default"
+    AssertSheetExists "使用说明"
+    AssertTrue ThisWorkbook.Worksheets("使用说明").Buttons().Count >= 5, _
+        "instruction buttons"
+    On Error Resume Next
+    Set scheduleTable = ThisWorkbook.Worksheets("自动排程").ListObjects("tblSchedule")
+    Set chartObject = ThisWorkbook.Worksheets("人机作业图").ChartObjects("chtManMachine")
+    On Error GoTo 0
+    AssertTrue scheduleTable Is Nothing, "blank schedule table absent"
+    AssertTrue chartObject Is Nothing, "blank chart absent"
+
+    LoadExampleDataAndRun
+    AssertEqual ReadPeople().Count, 1, "example people"
+    AssertEqual ReadDevices().Count, 3, "example devices"
+    AssertEqual ReadSteps().Count, 15, "example steps"
+    AssertEqual ThisWorkbook.Worksheets("自动排程").ListObjects("tblSchedule") _
+        .ListRows.Count, 45, "example schedule rows"
+    AssertTrue Abs(CDbl(ThisWorkbook.Worksheets("自动排程").Range("A4").Value2) - 56#) _
+        < 0.01, "example cycle"
+    AssertTrue Abs(CDbl(ThisWorkbook.Worksheets("自动排程").Range("B4").Value2) - _
+        56# / 3#) < 0.01, "example takt"
+
+    ResetToBlankState
+    AssertEqual ReadPeople().Count, 0, "reset people"
+    AssertEqual ReadDevices().Count, 0, "reset devices"
+    AssertEqual ReadSteps().Count, 0, "reset steps"
 End Sub
 
 Public Sub Test_DomainConstants()
@@ -647,7 +686,7 @@ Private Function ExpectedPassOutput() As String
         "Test_WorkbookReaders PASS; Test_ValidationRejectsBadInputs PASS; " & _
         "Test_ValidationReviewFindings PASS; Test_ValidationQualityFindings PASS; " & _
         "Test_SchedulingCore PASS; Test_LocksAndSnapshots PASS; " & _
-        "Test_VisualizationOutputs PASS"
+        "Test_VisualizationOutputs PASS; Test_BlankAndExampleWorkflow PASS"
 End Function
 
 Private Sub LoadValidationFixture(ByVal fixtureName As String)

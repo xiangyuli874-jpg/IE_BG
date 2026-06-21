@@ -2,10 +2,12 @@
 
 ## 人机作业分析模板
 
-- 推荐文件：`outputs/man_machine_analysis/人机作业分析自动排程模板_v1.xlsm`
+- 推荐文件：`outputs/人机作业分析表/人机作业分析自动排程模板_v2.xlsm`
 - 构建脚本：`tools/man_machine_analysis/build_template.ps1`
 - 验证脚本：`tools/man_machine_analysis/verify_template.ps1`
 - VBA 源码：`tools/man_machine_analysis/vba/`
+- 默认打开为空白模板；`使用说明`首页可载入 1 人 3 机示例并试算，也可一键恢复空白。
+- 工作簿共 6 个可见页面：`使用说明`、`基础设置`、`作业步骤`、`自动排程`、`人机作业图`、`改善对比报告`。
 - 上限：5 人、10 台设备、每台 20 步。
 - 颜色：黄色必填、浅蓝选填、灰色自动输出。
 - 核心指标：循环周期、平均节拍、小时产能、人员负荷率、设备利用与等待、移动时间。
