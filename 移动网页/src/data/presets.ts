@@ -1090,6 +1090,43 @@ const aLineModels: ModelConfig[] = [
   }
 ];
 
+function cloneGroups(groups: WorktimeGroup[], idPrefix: string): WorktimeGroup[] {
+  return groups.map((group) => ({
+    ...group,
+    id: `${idPrefix}-${group.id}`,
+    processes: group.processes.map((process) => ({
+      ...process,
+      id: `${idPrefix}-${process.id}`
+    }))
+  }));
+}
+
+function makePulsatorGroups(idPrefix: string): WorktimeGroup[] {
+  const groups = cloneGroups(ordinaryWasherDryerGroups, idPrefix);
+  const outerTubIndex = groups.findIndex((group) => group.name === "外筒班");
+  const insertAt = outerTubIndex >= 0 ? outerTubIndex + 1 : 0;
+  groups.splice(insertAt, 0, {
+    id: `${idPrefix}-pan-base`,
+    name: "盘座班",
+    order: insertAt + 1,
+    processes: []
+  });
+
+  return groups.map((group, index) => ({ ...group, order: index + 1 }));
+}
+
+function makeDefaultModel(groups: WorktimeGroup[]): ModelConfig[] {
+  return [{
+    id: "ordinary-washer-dryer",
+    name: "洗烘结构",
+    enabled: true,
+    groups
+  }];
+}
+
+const rollerLineModels = makeDefaultModel(cloneGroups(ordinaryWasherDryerGroups, "roller-line"));
+const pulsatorLineModels = makeDefaultModel(makePulsatorGroups("pulsator-line"));
+
 export const LINE_CONFIGS: LineConfig[] = [
   {
     id: "a-line",
@@ -1100,20 +1137,38 @@ export const LINE_CONFIGS: LineConfig[] = [
   {
     id: "b-line",
     name: "B线",
-    enabled: false,
-    models: []
+    enabled: true,
+    models: pulsatorLineModels
   },
   {
     id: "c-line",
     name: "C线",
-    enabled: false,
-    models: []
+    enabled: true,
+    models: pulsatorLineModels
   },
   {
     id: "d-line",
     name: "D线",
-    enabled: false,
-    models: []
+    enabled: true,
+    models: rollerLineModels
+  },
+  {
+    id: "e-line",
+    name: "E线",
+    enabled: true,
+    models: rollerLineModels
+  },
+  {
+    id: "h-line",
+    name: "H线",
+    enabled: true,
+    models: rollerLineModels
+  },
+  {
+    id: "base-line",
+    name: "底座线",
+    enabled: true,
+    models: rollerLineModels
   }
 ];
 

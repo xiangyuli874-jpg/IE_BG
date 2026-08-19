@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "tsx --test src/*.test.ts shared/*.test.ts api/**/*.test.ts",
+    "test": "tsx --test src/*.test.ts shared/*.test.ts api/**/*.test.ts netlify/functions/_shared/*.test.ts",
     "verify:export": "tsx scripts/verify-export.ts"
   },
   "dependencies": {

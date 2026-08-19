@@ -2,6 +2,9 @@
 command = "npm run build"
 publish = "dist"
 
+[build.environment]
+VITE_REQUIRE_ACCESS_CODE = "false"
+
 [functions]
 included_files = [
   "outputs/worktime_new_template/工时测量与负荷山积自动扩展模板_v16.xlsx"
