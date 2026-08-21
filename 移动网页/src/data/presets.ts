@@ -1126,6 +1126,12 @@ function makeDefaultModel(groups: WorktimeGroup[]): ModelConfig[] {
 
 const rollerLineModels = makeDefaultModel(cloneGroups(ordinaryWasherDryerGroups, "roller-line"));
 const pulsatorLineModels = makeDefaultModel(makePulsatorGroups("pulsator-line"));
+const baseLineModels = makeDefaultModel([{
+  id: "base-line-group",
+  name: "底座线",
+  order: 1,
+  processes: []
+}]);
 
 export const LINE_CONFIGS: LineConfig[] = [
   {
@@ -1168,7 +1174,7 @@ export const LINE_CONFIGS: LineConfig[] = [
     id: "base-line",
     name: "底座线",
     enabled: true,
-    models: rollerLineModels
+    models: baseLineModels
   }
 ];
 

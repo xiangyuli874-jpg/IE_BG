@@ -11,7 +11,7 @@ test("enables every requested production line", () => {
 });
 
 test("uses the roller group structure for roller lines and adds pan-base after outer tub for pulsator lines", () => {
-  for (const lineId of ["a-line", "d-line", "e-line", "h-line", "base-line"]) {
+  for (const lineId of ["a-line", "d-line", "e-line", "h-line"]) {
     const session = createSession(lineId, "ordinary-washer-dryer");
     assert.deepEqual(session.groups.map((group) => group.name), ["外筒班", "前总装", "后总装", "包装班"]);
   }
@@ -22,6 +22,10 @@ test("uses the roller group structure for roller lines and adds pan-base after o
     assert.deepEqual(session.groups.map((group) => group.order), [1, 2, 3, 4, 5]);
     assert.equal(session.groups[1].processes.length, 0);
   }
+
+  const baseLineSession = createSession("base-line", "ordinary-washer-dryer");
+  assert.deepEqual(baseLineSession.groups.map((group) => group.name), ["底座线"]);
+  assert.equal(baseLineSession.groups[0].processes.length, 0);
 });
 
 test("creates the washer-dryer structure with blank process names", () => {
